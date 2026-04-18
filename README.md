@@ -157,12 +157,13 @@ docker run -d -p 8000:8000 --name feishu-cli-web feishu-cli-web
 
 ## 🎬 视频演示
 
-### 1. 首次使用授权流程
-<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=116425624715283&bvid=BV1MjdHB7Ev1&cid=37612293566&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
-<!-- <video src="https://www.bilibili.com/video/BV1MjdHB7Ev1?t=1.5" controls width="100%" style="max-width: 800px; margin: 20px 0;">
-  您的浏览器不支持视频标签，请下载后观看：
-  <a href="doc/20260418_195547.mp4">doc/20260418_195547.mp4</a>
-</video> -->
+### 📹 B站演示视频
+
+我们为您准备了两个演示视频，帮助您快速了解 Feishu CLI Web 的使用方法：
+
+#### 1️⃣ 首次使用授权流程
+
+**🎥 [观看视频](https://www.bilibili.com/video/BV1MjdHB7Ev1)**
 
 **视频内容：**
 - 系统登录
@@ -171,14 +172,9 @@ docker run -d -p 8000:8000 --name feishu-cli-web feishu-cli-web
 - 执行授权流程
 - 授权状态检查
 
-### 2. 核心功能演示
+#### 2️⃣ 核心功能演示
 
-<!-- <video src="doc/20260418_195131.mp4" controls width="100%" style="max-width: 800px; margin: 20px 0;">
-  您的浏览器不支持视频标签，请下载后观看：
-  <a href="doc/20260418_195131.mp4">doc/20260418_195131.mp4</a>
-</video> -->
-
-<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=116425624652838&bvid=BV1mjdHBjEG2&cid=37612355921&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
+**🎥 [观看视频](https://www.bilibili.com/video/BV1mjdHBjEG2)**
 
 **视频内容：**
 - 自然语言交互
@@ -189,12 +185,23 @@ docker run -d -p 8000:8000 --name feishu-cli-web feishu-cli-web
 - 会话管理
 - 多用户切换
 
-### 视频文件说明
+### 💡 视频使用说明
 
-- **授权流程视频**：`doc/20260418_195547.mp4` - 首次使用时的完整授权流程
-- **功能演示视频**：`doc/20260418_195131.mp4` - 核心功能的实际操作演示
+**观看方式：**
+- 点击上方「观看视频」链接，跳转到 B站观看
+- 或复制视频链接到浏览器中打开
+- 支持 B站 APP 扫码观看
 
-**提示：** 如果视频无法在线播放，可以右键选择"在新标签页中打开"或下载到本地观看。
+**推荐观看顺序：**
+1. 先观看「首次使用授权流程」视频，了解如何完成飞书 CLI 授权
+2. 再观看「核心功能演示」视频，了解各种功能的使用方法
+
+**视频格式：**
+- 平台：哔哩哔哩（B站）
+- 清度：高清
+- 兼容性：支持所有主流浏览器和移动设备
+
+**提示：** 如果您想将视频分享给团队成员，可以直接分享 B站视频链接，或者将视频嵌入到企业内部文档中。
 
 ## ⚙️ 配置说明
 
