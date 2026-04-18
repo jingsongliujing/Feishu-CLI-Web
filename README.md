@@ -8,9 +8,10 @@
 [![FastAPI](https://img.shields.io/badge/fastapi-0.110+-red.svg)](https://fastapi.tiangolo.com/)
 
 **Feishu CLI Web** 是一个独立的飞书/Lark CLI Web 工作台，专注于提供简洁、高效的飞书自动化操作体验。通过自然语言界面，您可以轻松云端执行各种飞书操作，无需记忆复杂的 CLI 命令和安装任何Agent插件。
-
+![alt text](doc/企业微信截图_1776515623736.png)
+![alt text](doc/企业微信截图_17765156382978.png)
+![alt text](doc/企业微信截图_17765156749806.png)
 ## ✨ 核心特性
-
 ### 🤖 智能自然语言交互
 - **AI 驱动的命令规划**：自动理解自然语言描述，智能规划并执行 `lark-cli` 命令
 - **流式实时响应**：支持 SSE 流式输出，提供流畅的用户体验
