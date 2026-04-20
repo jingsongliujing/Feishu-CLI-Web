@@ -1,6 +1,6 @@
 # Feishu CLI Web
 
-> 🚀 一个现代化的飞书/Lark CLI Web智能工作台，通过自然语言与飞书进行交互
+> 🚀 一个现代化的飞书/Lark CLI Web智能工作台，通过自然语言与飞书进行交互，为企业快速接入飞书 CLI 能力到自己的Agent产品中提供解决方案。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.8+-green.svg)](https://www.python.org/downloads/)
@@ -325,7 +325,7 @@ feishu-cli-web/
 
 ## 🙏 致谢
 
-- [飞书/Lark](https://www.feishu.cn/)
+- [飞书/Lark](https://github.com/larksuite/cli)
 - [FastAPI](https://fastapi.tiangolo.com/)
 - [Vue.js](https://vuejs.org/)
 - [OpenAI](https://openai.com/)
