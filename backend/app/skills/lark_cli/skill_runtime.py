@@ -35,10 +35,6 @@ DEFAULT_LARK_COMMAND_TIMEOUT = 30
 SKILL_KEYWORD_HINTS: Dict[str, Tuple[str, ...]] = {
     "lark-reliable-scenes": (
         "飞书CLI测试群",
-        "赵鹤翔",
-        "杨继涛",
-        "黄云",
-        "刘劲松",
         "今天的十条AI新闻",
         "今天的销售数据汇总",
         "抖店-京东热店排名",
