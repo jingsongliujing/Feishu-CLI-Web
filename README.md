@@ -213,6 +213,49 @@ docker run -d -p 8000:8000 --name feishu-cli-web feishu-cli-web
 
 也可以在网页左侧的「模型配置」面板中动态修改。
 
+### 前端代理配置
+
+前端开发服务器通过 `frontend/vite.config.ts` 配置 API 代理，将前端请求转发到后端服务：
+
+```typescript
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+
+export default defineConfig({
+  plugins: [vue()],
+  server: {
+    host: '0.0.0.0',
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8000',
+        changeOrigin: true
+      }
+    }
+  }
+})
+```
+
+**配置说明：**
+- `host: '0.0.0.0'` - 允许外部访问（局域网/公网）
+- `port: 3000` - 前端开发服务器端口
+- `proxy` - 将 `/api` 请求代理到后端服务
+
+**IP 地址配置建议：**
+- **本地开发**：使用 `http://127.0.0.1:8000`（默认）
+- **局域网访问**：使用后端服务器的局域网 IP，如 `http://192.168.1.100:8000`
+- **公网部署**：使用后端服务器的公网 IP 或域名
+
+**环境变量配置：**
+
+在 `frontend/.env` 或 `frontend/.env.local` 中设置：
+
+```env
+VITE_API_TARGET=http://your-backend-server:8000
+```
+
+这样可以在不修改代码的情况下灵活切换后端服务地址。
+
 ## 📖 使用指南
 
 > 💡 **提示**：如果您是第一次使用，建议先观看上方的「视频演示」章节，了解完整的授权流程和功能使用方法。
