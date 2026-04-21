@@ -10,8 +10,6 @@ from app.config import get_settings
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 ENV_PATH = ROOT_DIR / ".env"
-DEFAULT_QWEN_API_KEY = "sk-28532b926ae746c2bc7dae5f54127ffe"
-
 
 MODEL_PRESETS: dict[str, dict[str, str]] = {
     "qwen": {
@@ -140,9 +138,7 @@ def apply_model_config(request: ModelConfigRequest) -> dict[str, Any]:
     provider = (request.provider or preset["provider"] or "openai").strip()
     existing = _read_env_values()
     api_key = request.api_key.strip()
-    if request.preset == "qwen" and request.use_default_qwen_key and not api_key:
-        api_key = DEFAULT_QWEN_API_KEY
-    elif not api_key:
+    if not api_key:
         api_key = existing.get("OPENAI_API_KEY", "")
 
     base_url = request.base_url.strip() or preset["base_url"]
