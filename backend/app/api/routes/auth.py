@@ -1,27 +1,22 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import secrets
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-router = APIRouter()
+from app.core.storage import store
 
-ROOT_DIR = Path(__file__).resolve().parents[4]
-AUTH_SESSION_PATH = ROOT_DIR / ".auth_sessions.json"
-AUTH_ACCOUNT_PATH = ROOT_DIR / ".auth_accounts.json"
+router = APIRouter()
 
 DEFAULT_ACCOUNTS = [
     {"account": "admin123", "name": "admin123", "password": "000000"},
     {"account": "admin", "name": "admin", "password": "000000"},
+    {"account": "local", "name": "local", "password": "000000"},
 ]
-
-AUTH_TOKENS: dict[str, dict[str, str]] = {}
 
 
 class LoginRequest(BaseModel):
@@ -38,45 +33,24 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
-def _read_json(path: Path, fallback: object) -> object:
-    if not path.exists():
-        return fallback
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return fallback
-
-
-def _write_json(path: Path, payload: object) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def _load_tokens() -> None:
-    if AUTH_TOKENS:
-        return
-    payload = _read_json(AUTH_SESSION_PATH, {})
-    if isinstance(payload, dict):
-        AUTH_TOKENS.update({str(key): value for key, value in payload.items() if isinstance(value, dict)})
-
-
-def _save_tokens() -> None:
-    _write_json(AUTH_SESSION_PATH, AUTH_TOKENS)
-
-
-def _load_accounts() -> list[dict[str, str]]:
-    payload = _read_json(AUTH_ACCOUNT_PATH, [])
-    if not isinstance(payload, list) or not payload:
-        accounts = [
-            {"account": item["account"], "name": item["name"], "password_hash": hash_password(item["password"])}
-            for item in DEFAULT_ACCOUNTS
-        ]
-        _write_json(AUTH_ACCOUNT_PATH, accounts)
-        return accounts
-    return [item for item in payload if isinstance(item, dict)]
-
-
 def _normalize_account(account: str) -> str:
     return (account or "").strip()
+
+
+def ensure_default_accounts() -> None:
+    row = store.query_one("SELECT COUNT(*) AS count FROM accounts")
+    if row and int(row["count"] or 0) > 0:
+        return
+
+    now = store.now()
+    for item in DEFAULT_ACCOUNTS:
+        store.execute(
+            """
+            INSERT INTO accounts(account, name, password_hash, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (item["account"], item["name"], hash_password(item["password"]), now, now),
+        )
 
 
 def _extract_token(authorization: Optional[str], x_auth_token: Optional[str]) -> str:
@@ -91,14 +65,17 @@ def get_current_account_optional(
     authorization: Optional[str] = Header(default=None),
     x_auth_token: Optional[str] = Header(default=None),
 ) -> Optional[AccountInfo]:
-    _load_tokens()
+    ensure_default_accounts()
     token = _extract_token(authorization, x_auth_token)
     if not token:
         return None
-    session = AUTH_TOKENS.get(token)
-    if not session:
+    row = store.query_one(
+        "SELECT account, name FROM auth_sessions WHERE token = ?",
+        (token,),
+    )
+    if not row:
         return None
-    return AccountInfo(account=session["account"], name=session.get("name") or session["account"])
+    return AccountInfo(account=row["account"], name=row["name"] or row["account"])
 
 
 def get_current_account(
@@ -113,27 +90,31 @@ def get_current_account(
 
 @router.post("/auth/login")
 async def login(request: LoginRequest) -> dict:
-    _load_tokens()
+    ensure_default_accounts()
     account_name = _normalize_account(request.account)
-    accounts = _load_accounts()
-    matched = next((item for item in accounts if str(item.get("account") or "") == account_name), None)
-    if not matched or matched.get("password_hash") != hash_password(request.password):
-        raise HTTPException(status_code=401, detail="账号或密码错误")
+    row = store.query_one(
+        "SELECT account, name, password_hash FROM accounts WHERE account = ?",
+        (account_name,),
+    )
+    if not row or row["password_hash"] != hash_password(request.password):
+        raise HTTPException(status_code=401, detail="Invalid account or password")
 
     token = secrets.token_urlsafe(32)
-    AUTH_TOKENS[token] = {
-        "account": account_name,
-        "name": str(matched.get("name") or account_name),
-        "issued_at": datetime.now().isoformat(),
-    }
-    _save_tokens()
+    issued_at = datetime.now().isoformat()
+    store.execute(
+        """
+        INSERT INTO auth_sessions(token, account, name, issued_at, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (token, row["account"], row["name"] or row["account"], issued_at, store.now()),
+    )
     return {
         "code": 0,
         "data": {
             "token": token,
             "account": {
-                "account": account_name,
-                "name": str(matched.get("name") or account_name),
+                "account": row["account"],
+                "name": row["name"] or row["account"],
             },
         },
     }
@@ -149,9 +130,7 @@ async def logout(
     authorization: Optional[str] = Header(default=None),
     x_auth_token: Optional[str] = Header(default=None),
 ) -> dict:
-    _load_tokens()
     token = _extract_token(authorization, x_auth_token)
     if token:
-        AUTH_TOKENS.pop(token, None)
-        _save_tokens()
+        store.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
     return {"code": 0, "message": "ok"}

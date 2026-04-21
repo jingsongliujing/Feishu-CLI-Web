@@ -1,61 +1,67 @@
 from __future__ import annotations
 
-import json
 import re
-import threading
-import time
 import uuid
-from pathlib import Path
 from typing import Any
 
-
-DATA_DIR = Path.cwd().parent / ".feishu_cli_data" if Path.cwd().name == "backend" else Path.cwd() / ".feishu_cli_data"
-SESSIONS_DIR = DATA_DIR / "sessions"
+from app.core.storage import store
 
 
 class LocalSessionStore:
-    def __init__(self) -> None:
-        self._lock = threading.RLock()
-        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-
     @staticmethod
     def _safe_user_id(user_id: str) -> str:
         normalized = re.sub(r"[^a-zA-Z0-9_-]+", "-", (user_id or "local").strip()).strip("-")
         return normalized or "local"
 
-    def _path(self, user_id: str, session_id: str) -> Path:
-        user_dir = SESSIONS_DIR / self._safe_user_id(user_id)
-        user_dir.mkdir(parents=True, exist_ok=True)
-        return user_dir / f"{session_id}.json"
-
-    def _read(self, path: Path) -> dict[str, Any]:
-        if not path.exists():
-            return {}
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-        return payload if isinstance(payload, dict) else {}
+    def _messages_for(self, user_id: str, session_id: str) -> list[dict[str, Any]]:
+        rows = store.query_all(
+            """
+            SELECT id, role, content, metadata_json, created_at
+            FROM chat_messages
+            WHERE user_id = ? AND session_id = ?
+            ORDER BY created_at ASC
+            """,
+            (self._safe_user_id(user_id), session_id),
+        )
+        return [
+            {
+                "id": row["id"],
+                "role": row["role"],
+                "content": row["content"],
+                "metadata": store.loads(row["metadata_json"], {}),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     def get_or_create(self, user_id: str, session_id: str = "") -> dict[str, Any]:
-        resolved_user = user_id or "local"
+        resolved_user = self._safe_user_id(user_id)
         resolved_session = session_id or str(uuid.uuid4())
-        path = self._path(resolved_user, resolved_session)
-        now = int(time.time())
-        with self._lock:
-            payload = self._read(path)
-            if payload:
-                return payload
-            payload = {
-                "session_id": resolved_session,
-                "user_id": resolved_user,
-                "title": "新会话",
-                "created_at": now,
-                "updated_at": now,
-                "messages": [],
-            }
-            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-            return payload
+        row = store.query_one(
+            "SELECT * FROM chat_sessions WHERE user_id = ? AND session_id = ?",
+            (resolved_user, resolved_session),
+        )
+        if not row:
+            now = store.now()
+            store.execute(
+                """
+                INSERT INTO chat_sessions(session_id, user_id, title, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (resolved_session, resolved_user, "New chat", now, now),
+            )
+            row = store.query_one(
+                "SELECT * FROM chat_sessions WHERE user_id = ? AND session_id = ?",
+                (resolved_user, resolved_session),
+            )
+        return {
+            "session_id": row["session_id"],
+            "user_id": row["user_id"],
+            "title": row["title"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "messages": self._messages_for(resolved_user, resolved_session),
+        }
 
     def append_message(
         self,
@@ -65,26 +71,38 @@ class LocalSessionStore:
         content: str,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        now = int(time.time())
-        path = self._path(user_id or "local", session_id)
-        with self._lock:
-            payload = self._read(path) or self.get_or_create(user_id, session_id)
-            messages = payload.setdefault("messages", [])
-            messages.append(
-                {
-                    "id": str(uuid.uuid4()),
-                    "role": role,
-                    "content": content or "",
-                    "metadata": metadata or {},
-                    "created_at": now,
-                }
+        resolved_user = self._safe_user_id(user_id)
+        self.get_or_create(resolved_user, session_id)
+        now = store.now()
+        store.execute(
+            """
+            INSERT INTO chat_messages(id, session_id, user_id, role, content, metadata_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                session_id,
+                resolved_user,
+                role,
+                content or "",
+                store.dumps(metadata or {}),
+                now,
+            ),
+        )
+        session = self.get_session(resolved_user, session_id) or {}
+        title = session.get("title") or ""
+        if role == "user" and title in {"", "New chat"}:
+            new_title = (content or "").strip().replace("\n", " ")[:28] or "New chat"
+            store.execute(
+                "UPDATE chat_sessions SET title = ?, updated_at = ? WHERE user_id = ? AND session_id = ?",
+                (new_title, now, resolved_user, session_id),
             )
-            if role == "user" and (payload.get("title") == "新会话" or not payload.get("title")):
-                title = (content or "").strip().replace("\n", " ")
-                payload["title"] = title[:28] or "新会话"
-            payload["updated_at"] = now
-            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-            return payload
+        else:
+            store.execute(
+                "UPDATE chat_sessions SET updated_at = ? WHERE user_id = ? AND session_id = ?",
+                (now, resolved_user, session_id),
+            )
+        return self.get_session(resolved_user, session_id) or {}
 
     def history_for_context(self, session: dict[str, Any], limit: int = 20) -> list[dict[str, str]]:
         messages = session.get("messages")
@@ -101,39 +119,61 @@ class LocalSessionStore:
         return history
 
     def list_sessions(self, user_id: str, limit: int = 50) -> list[dict[str, Any]]:
-        user_dir = SESSIONS_DIR / self._safe_user_id(user_id or "local")
-        if not user_dir.exists():
-            return []
-        sessions: list[dict[str, Any]] = []
-        for path in user_dir.glob("*.json"):
-            payload = self._read(path)
-            if not payload:
-                continue
-            messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
-            sessions.append(
-                {
-                    "session_id": payload.get("session_id") or path.stem,
-                    "user_id": payload.get("user_id") or user_id,
-                    "title": payload.get("title") or "新会话",
-                    "message_count": len(messages),
-                    "created_at": payload.get("created_at") or 0,
-                    "updated_at": payload.get("updated_at") or 0,
-                }
-            )
-        sessions.sort(key=lambda item: int(item.get("updated_at") or 0), reverse=True)
-        return sessions[: max(1, min(limit, 200))]
+        resolved_user = self._safe_user_id(user_id)
+        rows = store.query_all(
+            """
+            SELECT s.session_id, s.user_id, s.title, s.created_at, s.updated_at, COUNT(m.id) AS message_count
+            FROM chat_sessions s
+            LEFT JOIN chat_messages m ON m.user_id = s.user_id AND m.session_id = s.session_id
+            WHERE s.user_id = ?
+            GROUP BY s.session_id, s.user_id
+            ORDER BY s.updated_at DESC
+            LIMIT ?
+            """,
+            (resolved_user, max(1, min(limit, 200))),
+        )
+        return [
+            {
+                "session_id": row["session_id"],
+                "user_id": row["user_id"],
+                "title": row["title"] or "New chat",
+                "message_count": row["message_count"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
 
     def get_session(self, user_id: str, session_id: str) -> dict[str, Any] | None:
-        payload = self._read(self._path(user_id or "local", session_id))
-        return payload or None
+        resolved_user = self._safe_user_id(user_id)
+        row = store.query_one(
+            "SELECT * FROM chat_sessions WHERE user_id = ? AND session_id = ?",
+            (resolved_user, session_id),
+        )
+        if not row:
+            return None
+        return {
+            "session_id": row["session_id"],
+            "user_id": row["user_id"],
+            "title": row["title"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "messages": self._messages_for(resolved_user, session_id),
+        }
 
     def delete_session(self, user_id: str, session_id: str) -> bool:
-        path = self._path(user_id or "local", session_id)
-        with self._lock:
-            if not path.exists():
-                return False
-            path.unlink()
-            return True
+        resolved_user = self._safe_user_id(user_id)
+        existing = store.query_one(
+            "SELECT 1 FROM chat_sessions WHERE user_id = ? AND session_id = ?",
+            (resolved_user, session_id),
+        )
+        if not existing:
+            return False
+        store.execute(
+            "DELETE FROM chat_sessions WHERE user_id = ? AND session_id = ?",
+            (resolved_user, session_id),
+        )
+        return True
 
 
 session_store = LocalSessionStore()

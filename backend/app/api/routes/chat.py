@@ -8,7 +8,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.api.routes.auth import AccountInfo, get_current_account_optional
+from app.api.routes.auth import AccountInfo, get_current_account
+from app.core.execution_records import execution_record_store
 from app.core.local_sessions import session_store
 from app.skills.base import SkillContext, SkillResult
 from app.skills.lark_cli.skill import LarkCLISkill
@@ -26,6 +27,12 @@ class ChatRequest(BaseModel):
     stream: bool = True
 
 
+class PlanPreviewRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    user_id: str = "local"
+    session_id: str = ""
+
+
 def _serialize_sse(payload: dict[str, Any]) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
@@ -41,10 +48,10 @@ def _result_payload(result: SkillResult) -> dict[str, Any]:
 
 
 @router.post("/chat")
-async def chat(request: ChatRequest, account: AccountInfo | None = Depends(get_current_account_optional)):
+async def chat(request: ChatRequest, account: AccountInfo = Depends(get_current_account)):
     settings = get_settings()
     skill = LarkCLISkill()
-    resolved_user_id = account.account if account else (request.user_id or "local")
+    resolved_user_id = account.account
     session = session_store.get_or_create(resolved_user_id, request.session_id)
     session_id = str(session["session_id"])
     context = SkillContext(
@@ -52,7 +59,7 @@ async def chat(request: ChatRequest, account: AccountInfo | None = Depends(get_c
         user_id=resolved_user_id,
         message=request.message,
         history=session_store.history_for_context(session),
-        metadata={"created_at": int(time.time()), "account_name": account.name if account else ""},
+        metadata={"created_at": int(time.time()), "account_name": account.name},
     )
     timeout = request.timeout or settings.LARK_CLI_COMMAND_TIMEOUT
 
@@ -71,6 +78,14 @@ async def chat(request: ChatRequest, account: AccountInfo | None = Depends(get_c
             "assistant",
             result.message,
             result.data or {},
+        )
+        execution_record_store.add(
+            user_id=context.user_id,
+            session_id=context.session_id,
+            request=request.message,
+            plan=(result.data or {}).get("plan") or {},
+            executed_commands=(result.data or {}).get("executed_commands") or [],
+            success=result.success,
         )
         return {"code": 0, "data": _result_payload(result)}
 
@@ -104,6 +119,14 @@ async def chat(request: ChatRequest, account: AccountInfo | None = Depends(get_c
                 final_metadata["execution_trace"] = progress_events
             session_store.append_message(context.user_id, context.session_id, "user", request.message)
             session_store.append_message(context.user_id, context.session_id, "assistant", full_response, final_metadata)
+            execution_record_store.add(
+                user_id=context.user_id,
+                session_id=context.session_id,
+                request=request.message,
+                plan=final_metadata.get("plan") or {},
+                executed_commands=final_metadata.get("executed_commands") or [],
+                success=bool(final_metadata.get("executed_commands")) and not final_metadata.get("setup_required"),
+            )
             yield _serialize_sse({"type": "done", "session_id": context.session_id})
         except Exception as exc:
             yield _serialize_sse(
@@ -124,22 +147,41 @@ async def chat(request: ChatRequest, account: AccountInfo | None = Depends(get_c
     )
 
 
+@router.post("/chat/plan")
+async def preview_chat_plan(
+    request: PlanPreviewRequest,
+    account: AccountInfo = Depends(get_current_account),
+) -> dict[str, Any]:
+    resolved_user_id = account.account
+    session = session_store.get_session(resolved_user_id, request.session_id) if request.session_id else None
+    context = SkillContext(
+        session_id=str(session["session_id"]) if session else "",
+        user_id=resolved_user_id,
+        message=request.message,
+        history=session_store.history_for_context(session) if session else [],
+        metadata={"created_at": int(time.time()), "account_name": account.name},
+    )
+    skill = LarkCLISkill()
+    plan = await skill.preview_plan(context, request.message)
+    return {"code": 0, "data": {"session_id": context.session_id, "plan": plan}}
+
+
 @router.get("/sessions")
 async def list_sessions(
     user_id: str = Query("local"),
     limit: int = Query(50, ge=1, le=200),
-    account: AccountInfo | None = Depends(get_current_account_optional),
+    account: AccountInfo = Depends(get_current_account),
 ) -> dict[str, Any]:
-    return {"code": 0, "data": session_store.list_sessions(account.account if account else user_id, limit)}
+    return {"code": 0, "data": session_store.list_sessions(account.account, limit)}
 
 
 @router.get("/sessions/{session_id}")
 async def get_session(
     session_id: str,
     user_id: str = Query("local"),
-    account: AccountInfo | None = Depends(get_current_account_optional),
+    account: AccountInfo = Depends(get_current_account),
 ) -> dict[str, Any]:
-    session = session_store.get_session(account.account if account else user_id, session_id)
+    session = session_store.get_session(account.account, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"code": 0, "data": session}
@@ -149,9 +191,9 @@ async def get_session(
 async def get_session_messages(
     session_id: str,
     user_id: str = Query("local"),
-    account: AccountInfo | None = Depends(get_current_account_optional),
+    account: AccountInfo = Depends(get_current_account),
 ) -> dict[str, Any]:
-    session = session_store.get_session(account.account if account else user_id, session_id)
+    session = session_store.get_session(account.account, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"code": 0, "data": {"messages": session.get("messages", [])}}
@@ -161,8 +203,8 @@ async def get_session_messages(
 async def delete_session(
     session_id: str,
     user_id: str = Query("local"),
-    account: AccountInfo | None = Depends(get_current_account_optional),
+    account: AccountInfo = Depends(get_current_account),
 ) -> dict[str, Any]:
-    if not session_store.delete_session(account.account if account else user_id, session_id):
+    if not session_store.delete_session(account.account, session_id):
         raise HTTPException(status_code=404, detail="Session not found")
     return {"code": 0, "message": "Session deleted"}

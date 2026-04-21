@@ -13,8 +13,14 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.api.routes.auth import AccountInfo, get_current_account_optional
-from app.skills.lark_cli.profiles import auth_status_has_user, cli_env_for_profile, profile_for_user, save_profile_state
+from app.api.routes.auth import AccountInfo, get_current_account
+from app.skills.lark_cli.profiles import (
+    auth_status_has_user,
+    cli_env_for_profile,
+    cli_home_for_profile,
+    profile_for_user,
+    save_profile_state,
+)
 from app.skills.lark_cli.skill import LarkCLISkill
 
 router = APIRouter()
@@ -52,6 +58,7 @@ class SetupCLIState:
 class LarkSetupRequest(BaseModel):
     user_id: str = Field(default="local", min_length=1)
     force_full: bool = False
+    force_auth: bool = False
     reinstall_skills: bool = False
     scopes: list[str] = Field(default_factory=list)
 
@@ -206,10 +213,10 @@ def _build_setup_steps(cli_state: SetupCLIState, request: LarkSetupRequest) -> l
         steps.append(
             SetupCommandStep(
                 key="install_cli",
-                title="Install Lark CLI",
+                title="安装飞书 CLI",
                 command=[_command_name("npm"), "install", "-g", "@larksuite/cli"],
                 display_command="npm install -g @larksuite/cli",
-                description="Install the official Lark/Feishu CLI on this machine.",
+                description="当前服务器还没有检测到 lark-cli，需要先安装官方 CLI。",
             )
         )
 
@@ -217,10 +224,10 @@ def _build_setup_steps(cli_state: SetupCLIState, request: LarkSetupRequest) -> l
         steps.append(
             SetupCommandStep(
                 key="install_skills",
-                title="Install Lark AI Skills",
+                title="安装飞书能力包",
                 command=[_command_name("npx"), "skills", "add", "larksuite/cli", "-y", "-g"],
                 display_command="npx skills add larksuite/cli -y -g",
-                description="Install the official Lark CLI skill pack.",
+                description="安装官方飞书 CLI skills，让系统能识别消息、日程、文档、多维表格等命令。",
             )
         )
 
@@ -228,14 +235,24 @@ def _build_setup_steps(cli_state: SetupCLIState, request: LarkSetupRequest) -> l
         steps.append(
             SetupCommandStep(
                 key="config_init",
-                title="Create App Config",
+                title="初始化飞书应用配置",
                 command=[_command_name("lark-cli"), "config", "init", "--new"],
                 display_command="lark-cli config init --new",
-                description="Create an app config for the isolated user profile.",
+                description="为当前 Web 账号准备独立的飞书 CLI 配置，后续授权会写入这个隔离环境。",
             )
         )
 
-    if request.force_full or scopes or not cli_state.authenticated:
+    if request.force_full or request.force_auth or scopes or not cli_state.authenticated:
+        if request.force_auth:
+            steps.append(
+                SetupCommandStep(
+                    key="clear_auth",
+                    title="退出旧授权",
+                    command=[_command_name("lark-cli"), "auth", "logout"],
+                    display_command="lark-cli auth logout",
+                    description="先清除当前账号已有的飞书登录态，避免新旧授权混用。",
+                )
+            )
         auth_args = ["--scope", " ".join(scopes)] if scopes else ["--recommend"]
         auth_display = (
             f"lark-cli auth login --scope \"{' '.join(scopes)}\" --no-wait --json"
@@ -245,14 +262,61 @@ def _build_setup_steps(cli_state: SetupCLIState, request: LarkSetupRequest) -> l
         steps.append(
             SetupCommandStep(
                 key="auth_login",
-                title="Authorize User",
+                title="打开飞书授权链接",
                 command=[_command_name("lark-cli"), "auth", "login", *auth_args, "--no-wait", "--json"],
                 display_command=auth_display,
-                description="Create a browser authorization link and wait for login to finish.",
+                description="系统会生成一个授权链接，请在浏览器里完成登录和授权。",
             )
         )
 
     return steps
+
+
+def _remove_auth_fields(value: object) -> object:
+    auth_keys = {
+        "accessToken",
+        "access_token",
+        "refreshToken",
+        "refresh_token",
+        "token",
+        "tokens",
+        "user",
+        "users",
+    }
+    if isinstance(value, dict):
+        return {key: _remove_auth_fields(item) for key, item in value.items() if key not in auth_keys}
+    if isinstance(value, list):
+        return [_remove_auth_fields(item) for item in value]
+    return value
+
+
+def _clear_profile_auth(profile: str) -> dict[str, Any]:
+    home = cli_home_for_profile(profile)
+    lark_dir = home / ".lark-cli"
+    config_path = lark_dir / "config.json"
+    removed: list[str] = []
+
+    if config_path.exists():
+        try:
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+            cleaned = _remove_auth_fields(payload)
+            config_path.write_text(json.dumps(cleaned, ensure_ascii=False, indent=2), encoding="utf-8")
+            removed.append(str(config_path))
+        except Exception as exc:
+            return {"success": False, "message": f"Failed to clear config auth fields: {exc}", "removed": removed}
+
+    cache_dir = lark_dir / "cache"
+    if cache_dir.exists():
+        for path in cache_dir.glob("auth_login*"):
+            try:
+                if path.is_file():
+                    path.unlink()
+                    removed.append(str(path))
+            except Exception as exc:
+                return {"success": False, "message": f"Failed to remove auth cache {path}: {exc}", "removed": removed}
+
+    save_profile_state(profile, {"last_auth_login": False, "authenticated": False})
+    return {"success": True, "message": "Previous authorization was cleared.", "removed": removed}
 
 
 def _read_pipe_to_queue(pipe: object, source: str, event_queue: "queue.Queue[dict[str, Any]]") -> None:
@@ -393,6 +457,31 @@ async def _run_auth_login_step(step: SetupCommandStep, profile: str) -> AsyncGen
 async def _run_step(step: SetupCommandStep, profile: str) -> AsyncGenerator[dict[str, Any], None]:
     yield {"type": "step_start", "step": asdict(step)}
 
+    if step.key == "clear_auth":
+        logout_result = await _run_capture(step.command, timeout=20, profile=profile) if step.command else {}
+        logout_output = str(logout_result.get("stdout") or logout_result.get("stderr") or "").strip()
+        if logout_output:
+            yield {
+                "type": "terminal",
+                "stream": "stdout" if logout_result.get("success") else "stderr",
+                "chunk": logout_output + "\n",
+            }
+        result = await asyncio.to_thread(_clear_profile_auth, profile)
+        yield {
+            "type": "terminal",
+            "stream": "stdout" if result["success"] else "stderr",
+            "chunk": result["message"] + "\n",
+        }
+        yield {
+            "type": "step_done",
+            "step_key": step.key,
+            "success": bool(result["success"]),
+            "return_code": 0 if result["success"] else 1,
+            "stdout": result["message"] if result["success"] else "",
+            "stderr": "" if result["success"] else result["message"],
+        }
+        return
+
     if step.key == "auth_login":
         async for event in _run_auth_login_step(step, profile):
             yield event
@@ -443,9 +532,9 @@ def _build_status_payload(cli_state: SetupCLIState, steps: list[SetupCommandStep
 @router.get("/lark/setup/status")
 async def get_lark_setup_status(
     user_id: str = Query("local", min_length=1),
-    account: AccountInfo | None = Depends(get_current_account_optional),
+    account: AccountInfo = Depends(get_current_account),
 ) -> dict[str, Any]:
-    resolved_user_id = account.account if account else user_id
+    resolved_user_id = account.account
     skill = LarkCLISkill()
     cli_state = await _probe_cli_state(resolved_user_id)
     pending_steps = _build_setup_steps(cli_state, LarkSetupRequest(user_id=resolved_user_id))
@@ -455,10 +544,9 @@ async def get_lark_setup_status(
 @router.post("/lark/setup/stream")
 async def stream_lark_setup(
     request: LarkSetupRequest,
-    account: AccountInfo | None = Depends(get_current_account_optional),
+    account: AccountInfo = Depends(get_current_account),
 ) -> StreamingResponse:
-    if account:
-        request.user_id = account.account
+    request.user_id = account.account
 
     async def event_stream() -> AsyncGenerator[str, None]:
         skill = LarkCLISkill()

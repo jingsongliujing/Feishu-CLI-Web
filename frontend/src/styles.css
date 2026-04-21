@@ -589,6 +589,17 @@ button:disabled {
   border-left: 3px solid #2563eb;
 }
 
+.lark-setup-hintbox {
+  margin-top: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e40af;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .lark-setup-steps {
   display: flex;
   flex-direction: column;
@@ -619,9 +630,48 @@ button:disabled {
 }
 
 .lark-setup-step-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: #111827;
   font-size: 14px;
   font-weight: 700;
+}
+
+.lark-setup-step-index {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.lark-setup-step.running .lark-setup-step-index {
+  background: #2563eb;
+  color: white;
+}
+
+.lark-setup-step.success .lark-setup-step-index {
+  background: #10b981;
+  color: white;
+}
+
+.lark-setup-step.failed .lark-setup-step-index {
+  background: #ef4444;
+  color: white;
+}
+
+.lark-setup-step-desc {
+  margin-top: 7px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .lark-setup-step-command {
@@ -728,6 +778,76 @@ button:disabled {
   margin-left: auto;
 }
 
+.scenario-popover {
+  position: absolute;
+  left: 12px;
+  bottom: 42px;
+  width: min(720px, calc(100vw - 36px));
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(260px, 1.1fr);
+  gap: 12px;
+  border: 1px solid #dbe4ef;
+  border-radius: 14px;
+  background: white;
+  padding: 14px;
+  box-shadow: 0 18px 46px rgba(15, 23, 42, 0.18);
+  z-index: 11;
+}
+
+.scenario-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.scenario-list button {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px;
+  text-align: left;
+}
+
+.scenario-list button.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.scenario-list strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.scenario-list span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.scenario-form {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.scenario-form label {
+  display: grid;
+  gap: 6px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.scenario-form input {
+  min-height: 36px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 9px;
+}
+
 .model-popover {
   position: absolute;
   right: 12px;
@@ -810,6 +930,73 @@ button:disabled {
   font-weight: 750;
 }
 
+.plan-preview-card {
+  border-left: 3px solid #0f766e;
+}
+
+.plan-meta {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.plan-meta span {
+  border-radius: 999px;
+  background: #ecfeff;
+  color: #0f766e;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.plan-command-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.plan-command-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 11px 12px;
+}
+
+.plan-command-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.plan-command-item code {
+  display: block;
+  margin-top: 8px;
+  color: #111827;
+  overflow-wrap: anywhere;
+}
+
+.plan-command-item p {
+  margin: 7px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.plan-warning {
+  margin-top: 12px;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .mobile-menu-btn {
   display: none;
   position: absolute;
@@ -866,6 +1053,10 @@ button:disabled {
   }
 
   .quick-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .scenario-popover {
     grid-template-columns: 1fr;
   }
 

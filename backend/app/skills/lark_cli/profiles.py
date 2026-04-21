@@ -8,9 +8,10 @@ import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from app.core.storage import LARK_CLI_PROFILES_DIR, LARK_CLI_USERS_DIR, store
 
-PROFILE_STATE_DIR = Path.cwd() / ".lark_cli_profiles"
-CLI_USER_HOME_DIR = Path.cwd() / ".lark_cli_users"
+PROFILE_STATE_DIR = LARK_CLI_PROFILES_DIR
+CLI_USER_HOME_DIR = LARK_CLI_USERS_DIR
 
 
 def profile_for_user(user_id: str) -> str:
@@ -56,20 +57,26 @@ def profile_state_path(profile: str) -> Path:
 
 
 def load_profile_state(profile: str) -> Dict[str, object]:
-    path = profile_state_path(profile)
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    row = store.query_one("SELECT state_json FROM profile_states WHERE profile = ?", (profile,))
+    if row:
+        value = store.loads(row["state_json"], {})
+        return value if isinstance(value, dict) else {}
+    return {}
 
 
 def save_profile_state(profile: str, payload: Dict[str, object]) -> None:
-    path = profile_state_path(profile)
     existing = load_profile_state(profile)
     existing.update(payload)
-    path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+    store.execute(
+        """
+        INSERT INTO profile_states(profile, state_json, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(profile) DO UPDATE SET
+            state_json = excluded.state_json,
+            updated_at = excluded.updated_at
+        """,
+        (profile, store.dumps(existing), store.now()),
+    )
 
 
 def lark_cli_config_path() -> Path:

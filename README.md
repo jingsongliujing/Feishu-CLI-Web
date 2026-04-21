@@ -1,378 +1,483 @@
 # Feishu CLI Web
+![alt text](doc/企业微信截图_17767870259969.png)
+把飞书/Lark CLI 变成一个可私有化部署的 Web 智能工作台。
 
-> 🚀 一个现代化的飞书/Lark CLI Web智能工作台，通过自然语言与飞书进行交互，为企业快速接入飞书 CLI 能力到自己的Agent产品中提供解决方案。
+Feishu CLI Web 基于官方 `lark-cli`，提供自然语言交互、执行计划预览、写操作确认、多用户隔离和 SQLite 本地存储。它适合团队把飞书自动化能力快速接入自己的 Agent、内部工具或运维平台。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.8+-green.svg)](https://www.python.org/downloads/)
-[![Vue](https://img.shields.io/badge/vue-3.5+-brightgreen.svg)](https://vuejs.org/)
-[![FastAPI](https://img.shields.io/badge/fastapi-0.110+-red.svg)](https://fastapi.tiangolo.com/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110%2B-009688.svg)](https://fastapi.tiangolo.com/)
+[![Vue](https://img.shields.io/badge/Vue-3.5%2B-42b883.svg)](https://vuejs.org/)
 
-**Feishu CLI Web** 是一个独立的飞书/Lark CLI Web 工作台，专注于提供简洁、高效的飞书自动化操作体验。通过自然语言界面，您可以轻松云端执行各种飞书操作，无需记忆复杂的 CLI 命令和安装任何Agent插件。
-![alt text](doc/企业微信截图_1776515623736.png)
-![alt text](doc/企业微信截图_17765156382978.png)
-![alt text](doc/企业微信截图_17765156749806.png)
-## ✨ 核心特性
-### 🤖 智能自然语言交互
-- **AI 驱动的命令规划**：自动理解自然语言描述，智能规划并执行 `lark-cli` 命令
-- **流式实时响应**：支持 SSE 流式输出，提供流畅的用户体验
-- **上下文记忆**：基于会话历史的多轮智能对话
+## 它解决什么问题
 
-### 🎯 完整的飞书生态支持
-涵盖飞书核心功能模块：
-- 📊 **Base**：多维表格操作（记录、字段、视图、表单、仪表板等）
-- 📅 **Calendar**：日程管理、会议安排、会议室预订
-- 📧 **Mail**：邮件发送、草稿管理、邮件分类
-- 💬 **IM**：消息发送、群组管理、消息搜索
-- 📄 **Doc**：文档创建、编辑、搜索、媒体处理
-- 📁 **Drive**：文件上传下载、云盘管理、评论互动
-- 📈 **Sheets**：电子表格操作、数据导入导出
-- 👥 **Contact**：联系人管理、用户搜索
-- ✅ **Approval**：审批流程管理
-- ⏰ **Attendance**：考勤管理
-- 📝 **Minutes**：会议纪要管理
-- 🎉 **Event**：事件订阅
+飞书官方 CLI 能力很完整，但团队成员通常不想记命令、配置参数、处理授权和调试输出。Feishu CLI Web 在 CLI 之上加了一层更适合团队使用的 Web 工作流：
 
-### 👥 多用户隔离管理
-- **完全隔离**：每个用户拥有独立的 `.lark_cli_users` 环境和配置文件
-- **安全可靠**：用户间数据完全隔离，互不干扰
-- **灵活配置**：每个用户可独立配置 LLM 模型和飞书授权
-- **团队协作**：内置本地账号系统，支持多用户同时使用
+- 用自然语言描述飞书任务
+- 执行前预览计划和命令
+- 写操作需要确认，降低误操作风险
+- 每个用户独立授权，互不影响
+- 聊天记录、执行记录、账号信息统一保存到 SQLite
+- 内置常用场景模板，便于沉淀团队流程
 
-### 🔌 灵活的模型配置
-支持多种主流 LLM 模型（OpenAI 兼容接口）：
-- Qwen/百炼、智谱 AI、文心一言、ChatGPT、豆包
-- 支持自定义 OpenAI 兼容 API
+## 典型场景
 
-### 🌐 云端部署友好
-- 完全支持云端服务器部署，团队成员通过浏览器访问
-- Docker 容器化支持，轻松部署到任何云平台
-- 支持水平扩展和弹性伸缩
-
-## 🏆 技术优势
-
-| 特性 | 飞书官方 CLI | Trae/Claude Code/Cursor | **Feishu CLI Web** |
-|------|------------|----------------|-------------------|
-| 使用方式 | 命令行 | 命令行 + 额外组件 | 🌐 Web 界面 |
-| 自然语言 | ❌ | ✅ | ✅ |
-| 多用户隔离 | ❌ | ⚠️ 需配置 | ✅ 原生支持 |
-| Codex 依赖 | ❌ | ✅ 必需 | ❌ 无需 |
-| 云端部署 | ❌ | ⚠️ 复杂 | ✅ 完美支持 |
-| 团队协作 | ❌ | ⚠️ 需额外配置 | ✅ 开箱即用 |
-| 部署复杂度 | 低 | 高 | 🎯 低 |
-| 学习成本 | 高（需记命令） | 中 | 🚀 低（自然语言） |
-
-### 资源占用对比
-
-| 指标 | Trae/Claude Code/Cursor | **Feishu CLI Web** | 优势 |
-|------|-----------|-------------------|------|
-| 磁盘占用 | 500MB+ | ~100MB | 节省 80%+ |
-| 内存占用 | 500MB+ | ~100MB | 节省 80%+ |
-| 部署时间 | 30-60 分钟 | 5-10 分钟 | 快 6 倍 |
-| 依赖组件 | 5+ 个 | 2 个 | 简化 60% |
-
-## 📦 快速开始
-
-### 环境要求
-- Python 3.8+
-- Node.js 16+
-- （可选）飞书官方 CLI – 首次使用时会提示安装
-
-### 安装步骤
-
-```bash
-# 克隆项目
-git clone https://github.com/yourusername/feishu-cli-web.git
-cd feishu-cli-web
-
-# 后端安装
-cd backend
-pip install -r requirements.txt
-
-# 前端安装
-cd ../frontend
-npm install
+```text
+帮我和 刘鑫 在 明天 找一个 1小时 的空闲时间，创建主题为「项目复盘」的会议，并把会议链接发给他
 ```
 
-### 配置环境变量
+系统会先生成计划：
 
-复制 `.env.example` 为 `.env` 并修改：
+```text
+1. 搜索联系人 刘鑫
+2. 查询明天工作时间内双方共同空闲时间
+3. 创建「项目复盘」会议
+4. 邀请参会人
+5. 发送会议链接
+```
+
+确认后才会真正执行飞书写操作。
+
+## 功能亮点
+
+- **自然语言飞书操作**：发消息、建会议、查日程、创建文档、导入多维表格等。
+- **计划预览**：先看清楚系统准备做什么，再决定是否执行。
+- **场景模板**：群通知、会议安排、文档创建、多维表格导入、会议纪要总结等。
+- **多用户隔离**：每个 Web 账号有独立的 `lark-cli` HOME、授权状态和会话数据。
+- **SQLite 存储**：账号、登录态、会话、消息、执行记录集中在一个数据库文件里。
+- **OpenAI 兼容模型**：支持 Qwen、OpenAI、GLM、Doubao 等兼容接口。
+- **开源友好**：Skill 文档、场景模板、计划预览、存储层已拆分，方便贡献。
+
+## 支持的飞书能力
+
+| 模块 | 能力 |
+| --- | --- |
+| IM | 用户/群搜索、发消息、群消息读取 |
+| Calendar | 日程查询、忙闲推荐、会议创建、参会人邀请 |
+| Contact | 联系人搜索、用户信息查询 |
+| Doc / Wiki | 文档创建、检索、更新 |
+| Drive | 文件上传、导入、下载、评论 |
+| Base | 多维表格、字段、记录、视图、仪表盘、工作流 |
+| Sheets | 电子表格读写、样式、过滤视图、导出 |
+| Task | 任务、任务清单、提醒、评论 |
+| More | Mail、Minutes、VC、Whiteboard、Approval、Attendance、Event 等 |
+
+## 技术栈（依赖包）
+
+- Backend：FastAPI、Pydantic、SQLite、OpenAI SDK、Anthropic SDK、PyYAML
+- Frontend：Vue 3、TypeScript、Vite、SSE
+- Runtime：官方 `@larksuite/cli`
+
+## 快速开始
+
+### 1. 准备环境
+
+需要：
+
+- Python 3.10+
+- Node.js 16+
+- npm / npx
+- 一个 OpenAI 兼容模型 API Key
+
+建议先确认版本：
+
+```bash
+python --version
+node --version
+npm --version
+```
+
+Windows 如果 `python` 不可用，可以把后续命令里的 `python` 换成 `py -3`。
+
+可选：提前安装官方飞书 CLI。Linux/macOS 如果全局安装遇到权限问题，可以使用 Node 版本管理器，或按终端提示加 `sudo`。
+
+```bash
+npm install -g @larksuite/cli
+npx skills add larksuite/cli -y -g
+```
+
+如果没有提前安装，页面首次授权时也会提示安装。
+
+### 2. 克隆项目
+
+```bash
+git clone https://github.com/yourname/Feishu-CLI-Web.git
+cd Feishu-CLI-Web
+```
+
+### 3. 配置后端
+
+推荐使用虚拟环境，避免污染系统 Python。
+
+Linux/macOS：
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Windows PowerShell：
+
+```powershell
+cd backend
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+复制环境变量文件：
+
+Linux/macOS：
+
+```bash
+cd ..
+cp .env.example .env
+```
+
+Windows PowerShell：
+
+```powershell
+cd ..
+Copy-Item .env.example .env
+```
+
+编辑 `.env`：
 
 ```env
-# LLM 配置（以 Qwen/百炼为例）
 LLM_PROVIDER=openai
 OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL=qwen-plus
 OPENAI_API_KEY=your_api_key_here
-
-# 应用配置
 APP_NAME=Feishu CLI Web
 API_PREFIX=/api/v1
 LARK_CLI_COMMAND_TIMEOUT=120
 ```
 
-### 启动服务
+### 4. 启动后端
 
-**开发模式：**
+确保当前目录是 `backend`，并且虚拟环境已激活。
+
 ```bash
-# 后端（端口 8000）
 cd backend
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-# 前端（端口 3000）
+### 5. 启动前端
+
+```bash
 cd frontend
+npm ci
 npm run dev
 ```
 
-**生产模式（云端部署）：**
-```bash
-# 后端
-cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+访问：
 
-# 前端构建
+- Web：http://localhost:3000
+- API Docs：http://localhost:8000/docs
+
+如果你没有提交 `package-lock.json`，可以把 `npm ci` 换成 `npm install`。当前仓库已经包含 lock 文件，优先用 `npm ci` 可以保证不同机器安装结果一致。
+
+启动后可以先做一次最小检查：
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+返回 `{"status":"ok"}` 说明后端已启动。然后打开 Web，使用默认账号登录，再按页面提示连接飞书。
+
+### 6. 生产构建
+
+```bash
 cd frontend
+npm ci
 npm run build
-# 将 dist/ 目录部署到 Nginx 等 Web 服务器
 ```
 
-**Docker 部署：**
-```dockerfile
-# 示例 Dockerfile
-FROM python:3.9-slim
-WORKDIR /app
-COPY backend/requirements.txt .
-RUN pip install -r requirements.txt
-COPY backend/ ./
-EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+把 `frontend/dist/` 交给 Nginx、Caddy 或其它静态文件服务。生产环境需要把 `/api` 反向代理到后端，例如 `http://127.0.0.1:8000`。
+
+## 默认账号
+
+首次启动时，如果数据库中没有账号，系统会自动创建：
+
+| 账号 | 密码 |
+| --- | --- |
+| `admin123` | `000000` |
+| `admin` | `000000` |
+| `local` | `000000` |
+
+这些账号只适合本地开发和演示。正式部署前请修改默认密码，或接入自己的认证系统。
+
+默认账号只会在 `accounts` 表为空时初始化。正式部署时建议先新增自己的管理员账号，再删除演示账号；只要表里还有正式账号，系统不会把演示账号补回来。
+
+## SQLite 与账号管理
+
+项目默认使用 SQLite 保存运行期数据，不需要额外安装数据库服务。数据库文件会在首次启动后自动创建：
+
+```text
+.feishu_cli_data/feishu_cli_web.sqlite3
 ```
+
+主要数据表：
+
+- `accounts`：Web 登录账号和密码哈希
+- `auth_sessions`：Web 登录 token
+- `chat_sessions` / `chat_messages`：聊天会话和消息
+- `execution_records`：飞书 CLI 执行记录
+- `profile_states`：每个 Web 账号对应的飞书授权状态
+
+如果只是本地开发，可以直接使用默认账号。团队部署时，建议用脚本批量维护账号，不要手改数据库。
+
+### 批量新增或更新用户
+
+编辑：
+
+```text
+backend/data/users_upsert.json
+```
+
+示例：
+
+```json
+{
+  "users": [
+    {
+      "account": "demo",
+      "name": "Demo User",
+      "password": "000000"
+    }
+  ]
+}
+```
+
+执行：
 
 ```bash
-docker build -t feishu-cli-web .
-docker run -d -p 8000:8000 --name feishu-cli-web feishu-cli-web
+cd backend
+python data/manage_users.py --add-file data/users_upsert.json
 ```
 
-启动后访问：
-- 前端界面：`http://localhost:3000`
-- API 文档：`http://localhost:8000/docs`
+同一个 `account` 已存在时，脚本会更新昵称和密码。
 
-## 🎬 视频演示
+### 批量删除用户
 
-### 📹 B站演示视频
+编辑：
 
-我们为您准备了两个演示视频，帮助您快速了解 Feishu CLI Web 的使用方法：
-
-#### 1️⃣ 首次使用授权流程
-
-**🎥 [观看视频](https://www.bilibili.com/video/BV1MjdHB7Ev1)**
-
-**视频内容：**
-- 系统登录
-- 飞书 CLI 安装
-- 初始化配置
-- 执行授权流程
-- 授权状态检查
-
-#### 2️⃣ 核心功能演示
-
-**🎥 [观看视频](https://www.bilibili.com/video/BV1mjdHBjEG2)**
-
-**视频内容：**
-- 自然语言交互
-- 飞书多维表格操作
-- 日程管理
-- 消息发送
-- 文档创建
-- 会话管理
-- 多用户切换
-
-
-## ⚙️ 配置说明
-
-### 环境变量
-
-| 变量名 | 说明 | 默认值 | 必填 |
-|--------|------|--------|------|
-| `LLM_PROVIDER` | LLM 提供商 | `openai` | 否 |
-| `OPENAI_BASE_URL` | OpenAI 兼容 API 地址 | - | 是 |
-| `LLM_MODEL` | 模型名称 | `qwen-plus` | 是 |
-| `OPENAI_API_KEY` | API 密钥 | - | 是 |
-| `APP_NAME` | 应用名称 | `Feishu CLI Web` | 否 |
-| `API_PREFIX` | API 路径前缀 | `/api/v1` | 否 |
-| `LARK_CLI_COMMAND_TIMEOUT` | CLI 命令超时(秒) | `120` | 否 |
-
-### LLM 配置示例
-
-| 模型 | Base URL | 模型名 |
-|------|----------|--------|
-| Qwen/百炼 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` |
-| 智谱 AI | `https://open.bigmodel.cn/api/paas/v4` | `glm-4` |
-| 文心一言 | `https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat` | `ernie-bot-4` |
-| ChatGPT | `https://api.openai.com/v1` | `gpt-4` |
-| 豆包 | `https://ark.cn-beijing.volces.com/api/v3` | `ep-xxxxx` |
-
-也可以在网页左侧的「模型配置」面板中动态修改。
-
-### 前端代理配置
-
-前端开发服务器通过 `frontend/vite.config.ts` 配置 API 代理，将前端请求转发到后端服务：
-
-```typescript
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
-
-export default defineConfig({
-  plugins: [vue()],
-  server: {
-    host: '0.0.0.0',
-    port: 3000,
-    proxy: {
-      '/api': {
-        target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8000',
-        changeOrigin: true
-      }
-    }
-  }
-})
+```text
+backend/data/users_delete.json
 ```
 
-**配置说明：**
-- `host: '0.0.0.0'` - 允许外部访问（局域网/公网）
-- `port: 3000` - 前端开发服务器端口
-- `proxy` - 将 `/api` 请求代理到后端服务
+示例：
 
-**IP 地址配置建议：**
-- **本地开发**：使用 `http://127.0.0.1:8000`（默认）
-- **局域网访问**：使用后端服务器的局域网 IP，如 `http://192.168.1.100:8000`
-- **公网部署**：使用后端服务器的公网 IP 或域名
-
-**环境变量配置：**
-
-在 `frontend/.env` 或 `frontend/.env.local` 中设置：
-
-```env
-VITE_API_TARGET=http://your-backend-server:8000
+```json
+{
+  "accounts": [
+    "demo"
+  ]
+}
 ```
 
-这样可以在不修改代码的情况下灵活切换后端服务地址。
+执行：
 
-## 📖 使用指南
-
-> 💡 **提示**：如果您是第一次使用，建议先观看上方的「视频演示」章节，了解完整的授权流程和功能使用方法。
-
-### 登录
-
-默认本地账号（密码均为 `000000`）：
-
-| 账号 | 说明 |
-|------|------|
-| `admin` | 测试账号 1 |
-| `admin123` | 测试账号 2 |
-| `local` | 默认本地账号 |
-
-账号数据保存在 `.auth_accounts.json`，登录态保存在 `.auth_sessions.json`。
-
-### 飞书 CLI 授权
-
-本项目基于官方 `@larksuite/cli`，授权流程与官方完全一致：
-
-1. 安装官方 CLI：`npm install -g @larksuite/cli`
-2. 添加官方 Skill：`npx skills add larksuite/cli -y -g`
-3. 初始化配置：`lark-cli config init --new`
-4. 执行授权：`lark-cli auth login --recommend`
-5. 检查状态：`lark-cli auth status`
-
-也可在网页左侧「飞书授权」面板中按提示操作。**每个用户的授权状态完全独立**，互不影响。
-
-### 自然语言交互
-
-在聊天界面直接描述需求：
-
-```
-用户：帮我创建一个飞书文档
-助手：正在为您创建飞书文档...
+```bash
+cd backend
+python data/manage_users.py --delete-file data/users_delete.json
 ```
 
-也可以直接执行 `lark-cli` 命令，或进行多轮对话。
+删除用户时会同步清理该账号的 Web 登录态、聊天记录、执行记录和飞书授权状态。默认不会删除隔离的官方 `lark-cli` HOME 目录；如果确认不再需要该用户的本地飞书授权缓存，可以加参数：
 
-### 会话管理
-
-- 左侧会话列表可查看历史、新建会话、删除会话
-- 会话数据存储在 `.feishu_cli_data/sessions/`，按用户隔离
-
-## 🔌 API 文档
-
-### 认证
-- `POST /api/v1/auth/login` – 登录
-- `GET /api/v1/auth/me` – 获取当前用户
-- `POST /api/v1/auth/logout` – 退出
-
-### 聊天
-- `POST /api/v1/chat` – 发送消息（支持流式）
-- `GET /api/v1/sessions` – 获取会话列表
-- `GET /api/v1/sessions/{session_id}` – 获取会话详情
-- `DELETE /api/v1/sessions/{session_id}` – 删除会话
-
-### 模型配置
-- `GET /api/v1/models/config` – 获取模型配置
-- `POST /api/v1/models/config` – 保存模型配置
-
-### 飞书 CLI 设置
-- `GET /api/v1/lark/setup/status` – 检查 CLI 状态
-- `POST /api/v1/lark/setup/stream` – 执行设置（流式）
-
-## 📁 项目结构
-
-```
-feishu-cli-web/
-├── backend/
-│   ├── app/
-│   │   ├── api/routes/      # API 路由
-│   │   ├── core/            # 核心功能（会话、模型配置）
-│   │   ├── skills/lark_cli/ # 飞书 CLI Skill 定义
-│   │   ├── config.py
-│   │   └── main.py
-│   ├── requirements.txt
-│   └── .lark_cli_users/     # 用户数据（自动生成）
-├── frontend/
-│   ├── src/
-│   │   ├── components/      # Vue 组件
-│   │   └── App.vue
-│   ├── package.json
-│   └── vite.config.ts
-├── .env.example
-└── README.md
+```bash
+python data/manage_users.py --delete-file data/users_delete.json --purge-cli-data
 ```
 
-## 🛡️ 安全说明
+### 常用维护命令
 
-以下目录/文件包含敏感数据，**不应提交到代码仓库**：
+```bash
+# 查看当前账号
+python data/manage_users.py --list
 
-- `.env`
-- `.feishu_cli_data/`
-- `.lark_cli_profiles/`
-- `.lark_cli_users/`
-- `.auth_accounts.json`
-- `.auth_sessions.json`
-- `frontend/node_modules/`
+# 预览新增/更新，不写入数据库
+python data/manage_users.py --add-file data/users_upsert.json --dry-run
 
-请使用环境变量管理 API 密钥，并定期轮换。
+# 预览删除，不写入数据库
+python data/manage_users.py --delete-file data/users_delete.json --dry-run
 
-## 🤝 贡献指南
+# 指定其它 SQLite 文件
+python data/manage_users.py --db ../.feishu_cli_data/feishu_cli_web.sqlite3 --list
+```
 
-欢迎贡献！请 Fork 本仓库，创建特性分支，提交 PR。
+这些命令也可以从项目根目录运行：
 
-## 📄 开源协议
+```bash
+python backend/data/manage_users.py --add-file backend/data/users_upsert.json
+python backend/data/manage_users.py --delete-file backend/data/users_delete.json
+```
 
-[MIT License](LICENSE)
+也可以使用 DB Browser for SQLite、DBeaver、DataGrip 等 SQLite 工具查看数据，但不建议直接改 `password_hash`、`auth_sessions` 或飞书授权相关字段。新增、改密、删除账号优先使用脚本，避免状态不一致。
 
-## 🙏 致谢
+## 飞书授权
 
-- [飞书/Lark](https://github.com/larksuite/cli)
-- [FastAPI](https://fastapi.tiangolo.com/)
-- [Vue.js](https://vuejs.org/)
-- [OpenAI](https://openai.com/)
+登录后，如果当前账号还没有完成飞书 CLI 初始化或授权，页面会显示「连接飞书账号」卡片。
 
----
+授权流程会做这些事：
 
-**⭐ 如果这个项目对您有帮助，请给我们一个 Star！**
+1. 检查 `lark-cli` 是否可用
+2. 为当前 Web 用户准备独立 CLI 环境
+3. 生成飞书授权链接
+4. 等待用户在浏览器中完成授权
+5. 保存该 Web 账号的独立授权状态
+
+侧边栏提供「重新授权飞书」入口。重新授权会分两步执行：
+
+1. 执行官方 `lark-cli auth logout`，并清除当前 Web 用户隔离环境中的旧授权缓存
+2. 按首次连接飞书账号的同一流程生成新的授权链接，并等待用户完成登录
+
+它不会强制重装 CLI，也不会重建已有应用配置。
+
+## 数据目录
+
+运行期数据默认集中在：
+
+```text
+.feishu_cli_data/
+  feishu_cli_web.sqlite3
+  lark_cli_profiles/
+  lark_cli_users/
+```
+
+说明：
+
+- `feishu_cli_web.sqlite3`：账号、登录 token、聊天会话、消息、执行记录、profile 状态
+- `lark_cli_profiles/`：Web 侧 profile 状态
+- `lark_cli_users/`：每个 Web 用户独立的官方 `lark-cli` HOME
+
+不要提交或分享这些敏感数据：
+
+```text
+.env
+.feishu_cli_data/
+.lark_cli_profiles/
+.lark_cli_users/
+.auth_accounts.json
+.auth_sessions.json
+frontend/node_modules/
+frontend/dist/
+```
+
+旧版本的 `.auth_accounts.json`、`.auth_sessions.json`、`.feishu_cli_data/sessions/*.json` 已被 SQLite 替代。
+
+## API 概览
+
+除 `/health` 和登录接口外，业务 API 需要携带登录 token。前端会自动处理；如果你直接调用 API，需要在请求头里加：
+
+```text
+X-Auth-Token: <login_token>
+```
+
+| API | 说明 |
+| --- | --- |
+| `GET /health` | 健康检查 |
+| `POST /api/v1/auth/login` | 登录 |
+| `GET /api/v1/auth/me` | 当前账号 |
+| `POST /api/v1/chat/plan` | 生成执行计划，不执行命令 |
+| `POST /api/v1/chat` | 执行聊天请求，支持 SSE |
+| `GET /api/v1/sessions` | 会话列表 |
+| `GET /api/v1/scenarios` | 场景模板列表 |
+| `POST /api/v1/scenarios/render` | 渲染场景模板 |
+| `GET /api/v1/models/config` | 模型配置 |
+| `POST /api/v1/models/config` | 保存模型配置 |
+| `GET /api/v1/lark/setup/status` | 飞书 CLI 状态 |
+| `POST /api/v1/lark/setup/stream` | 初始化或重新授权飞书 CLI |
+
+## 部署检查清单
+
+上线前建议逐项确认：
+
+- 后端使用 Python 3.10+，并通过 `python -m pip install -r backend/requirements.txt` 安装依赖。
+- 前端使用 Node.js 16+，并通过 `npm ci` 安装依赖。
+- `.env` 已配置模型 API Key、模型名称和 API 地址。
+- `.feishu_cli_data/` 所在目录对后端进程可写。
+- 服务器能执行 `npm`、`npx` 和 `lark-cli`。如果没有预装 `lark-cli`，首次授权页面会引导安装。
+- 生产环境已经把前端 `/api` 反向代理到后端。
+- 默认账号密码已经修改，或已通过 `backend/data/manage_users.py` 新建正式账号并删除演示账号。
+- 用 `curl http://127.0.0.1:8000/health` 检查后端健康状态。
+- 用浏览器打开前端并完成一次登录，确认 `/api/v1/auth/me` 不再返回 401。
+
+常见问题：
+
+- `python: command not found`：Windows 使用 `py -3`，Linux/macOS 确认已安装 Python 3.10+。
+- `npm ci` 失败：先确认 Node.js 版本；如果 lock 文件被删除，改用 `npm install`。
+- `lark-cli command was not found`：运行 `npm install -g @larksuite/cli`，然后重启后端进程。
+- Linux/macOS 全局安装 npm 包权限不足：使用 Node 版本管理器，或按系统策略使用 `sudo npm install -g @larksuite/cli`。
+- SQLite 报只读或 I/O 错误：确认 `.feishu_cli_data/` 目录存在且后端进程有写权限。
+- 前端能打开但接口 404 或跨域失败：开发环境确认 `frontend/vite.config.ts` 的 `VITE_API_TARGET` 指向后端；生产环境确认 Nginx/Caddy 已转发 `/api`。
+
+## 项目结构
+
+```text
+Feishu-CLI-Web/
+  backend/
+    data/                     # SQLite account maintenance scripts and JSON examples
+    app/
+      api/routes/              # FastAPI routes
+      core/                    # SQLite, sessions, templates, records
+      skills/lark_cli/
+        skills/                # Skill markdown docs and references
+        plan_preview.py        # dry-run plan preview
+        skill_runtime.py       # Lark CLI runtime orchestrator
+    requirements.txt
+  frontend/
+    src/components/            # Vue components
+    src/lib/                   # frontend helpers
+    package.json
+  doc/                         # screenshots, videos, sharing docs
+  .env.example
+  README.md
+```
+
+## 如何扩展
+
+### 增加场景模板
+
+编辑：
+
+```text
+backend/app/core/scenario_templates.py
+```
+
+适合沉淀团队常用流程，例如：
+
+- 创建项目周会
+- 发送发布通知
+- 导入销售数据到多维表格
+- 从会议纪要生成任务
+
+### 增加飞书 Skill
+
+在下面目录新增 Skill：
+
+```text
+backend/app/skills/lark_cli/skills/
+```
+
+每个 Skill 使用 `SKILL.md` 描述能力、命令、约束和示例。复杂能力可以在 `references/` 中补充更多文档。
+
+### 运行时模块
+
+- `backend/app/core/storage.py`
+- `backend/app/core/local_sessions.py`
+- `backend/app/core/scenario_templates.py`
+- `backend/app/core/execution_records.py`
+- `backend/app/skills/lark_cli/plan_preview.py`
+
+
+## 贡献
+
+欢迎 Issue 和 PR
+
+## License
+
+[MIT](LICENSE)

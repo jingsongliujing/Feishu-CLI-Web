@@ -33,6 +33,15 @@ DEFAULT_LARK_LLM_TIMEOUT = 25
 DEFAULT_LARK_COMMAND_TIMEOUT = 30
 
 SKILL_KEYWORD_HINTS: Dict[str, Tuple[str, ...]] = {
+    "lark-workflow-templates": (
+        "模板",
+        "场景",
+        "流程",
+        "workflow",
+        "template",
+        "一键",
+        "固定流程",
+    ),
     "lark-reliable-scenes": (
         "飞书CLI测试群",
         "今天的十条AI新闻",
@@ -334,6 +343,11 @@ class LarkCLISkill(BaseSkill):
     def get_skill_content(self, skill_name: str) -> str:
         doc = self._skills_metadata.get(skill_name)
         return doc.content if doc else ""
+
+    async def preview_plan(self, context: SkillContext, query: str) -> Dict[str, Any]:
+        from app.skills.lark_cli.plan_preview import build_plan_preview
+
+        return await build_plan_preview(self, context, query)
 
     @staticmethod
     def _truncate_text(text: str, limit: int = 1200) -> str:
@@ -1201,7 +1215,7 @@ class LarkCLISkill(BaseSkill):
         text = re.sub(r"(都)?发消息$", "", text)
         text = re.sub(r"(都)?发个消息$", "", text)
         text = re.sub(r"(都)?发个$", "", text)
-        text = text.replace("和", "、").replace("，", "、").replace(",", "、")
+        text = text.replace("和", "、").replace("跟", "、").replace("与", "、").replace("，", "、").replace(",", "、")
         text = re.sub(r"\s+", "", text)
         candidates = [item.strip("“”\"' ") for item in text.split("、")]
         deduped: List[str] = []
@@ -1541,12 +1555,53 @@ class LarkCLISkill(BaseSkill):
         return start_dt.isoformat(timespec="seconds"), end_dt.isoformat(timespec="seconds")
 
     @staticmethod
+    def _this_week_work_bounds() -> Tuple[str, str]:
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        friday = monday + timedelta(days=4)
+        tz = datetime.now().astimezone().tzinfo
+        start_dt = datetime.combine(monday, time(hour=9, minute=0), tzinfo=tz)
+        end_dt = datetime.combine(friday, time(hour=18, minute=0), tzinfo=tz)
+        return start_dt.isoformat(timespec="seconds"), end_dt.isoformat(timespec="seconds")
+
+    @staticmethod
+    def _schedule_window(text: str) -> Optional[Dict[str, str]]:
+        normalized = LarkCLISkill._sanitize_query_text(text)
+        explicit_date = LarkCLISkill._extract_explicit_date(normalized)
+        if explicit_date:
+            start, end = LarkCLISkill._workday_iso_bounds(explicit_date)
+            return {"label": explicit_date.isoformat(), "start": start, "end": end, "date": explicit_date.isoformat()}
+
+        today = date.today()
+        relative_days = (
+            ("后天", 2),
+            ("大后天", 3),
+            ("明天", 1),
+            ("今天", 0),
+        )
+        for token, offset in relative_days:
+            if token in normalized:
+                target = today + timedelta(days=offset)
+                start, end = LarkCLISkill._workday_iso_bounds(target)
+                return {"label": token, "start": start, "end": end, "date": target.isoformat()}
+
+        if "下周" in normalized:
+            start, end = LarkCLISkill._next_week_work_bounds()
+            return {"label": "下周", "start": start, "end": end, "date": ""}
+
+        if "本周" in normalized or "这周" in normalized:
+            start, end = LarkCLISkill._this_week_work_bounds()
+            return {"label": "本周", "start": start, "end": end, "date": ""}
+
+        return None
+
+    @staticmethod
     def _parse_group_schedule_request(query: str) -> Optional[Dict[str, str]]:
         normalized = LarkCLISkill._sanitize_query_text(query)
         if "群" not in normalized:
             return None
-        explicit_date = LarkCLISkill._extract_explicit_date(normalized)
-        if not explicit_date and not any(token in normalized for token in ("下周", "本周", "这周", "明天", "今天")):
+        window = LarkCLISkill._schedule_window(normalized)
+        if not window:
             return None
         if not any(token in normalized for token in ("所有人", "大家", "群里", "群成员")):
             return None
@@ -1575,7 +1630,9 @@ class LarkCLISkill(BaseSkill):
         elif "半小时" in normalized:
             duration_minutes = 30
 
-        summary = "讨论会" if "讨论" in normalized else "会议"
+        summary = LarkCLISkill._extract_calendar_summary(normalized)
+        if summary == "会议":
+            summary = "讨论会" if "讨论" in normalized else "会议"
         if "评审" in normalized:
             summary = "需求评审会"
 
@@ -1583,7 +1640,10 @@ class LarkCLISkill(BaseSkill):
             "group": group,
             "summary": summary,
             "duration_minutes": str(duration_minutes),
-            "date": explicit_date.isoformat() if explicit_date else "",
+            "date": window.get("date", ""),
+            "window_label": window["label"],
+            "window_start": window["start"],
+            "window_end": window["end"],
         }
 
     @staticmethod
@@ -1596,11 +1656,11 @@ class LarkCLISkill(BaseSkill):
         if not any(token in normalized for token in ("开会", "开个会", "会议", "讨论会", "日程")):
             return None
         attendees = LarkCLISkill._parse_attendees(normalized)
-        if len(attendees) < 2:
+        if not attendees:
             return None
 
-        explicit_date = LarkCLISkill._extract_explicit_date(normalized)
-        if not explicit_date and not any(token in normalized for token in ("下周", "本周", "这周", "明天", "今天")):
+        window = LarkCLISkill._schedule_window(normalized)
+        if not window:
             return None
 
         duration_match = re.search(r"(?P<hours>\d+(?:\.\d+)?)\s*小时", normalized)
@@ -1610,7 +1670,9 @@ class LarkCLISkill(BaseSkill):
         elif "半小时" in normalized:
             duration_minutes = 30
 
-        summary = "讨论会" if "讨论" in normalized else "会议"
+        summary = LarkCLISkill._extract_calendar_summary(normalized)
+        if summary == "会议":
+            summary = "讨论会" if "讨论" in normalized else "会议"
         if "评审" in normalized:
             summary = "需求评审会"
 
@@ -1618,9 +1680,12 @@ class LarkCLISkill(BaseSkill):
             "attendees": json.dumps(attendees, ensure_ascii=False, separators=(",", ":")),
             "summary": summary,
             "duration_minutes": str(duration_minutes),
-            "date": explicit_date.isoformat() if explicit_date else "",
+            "date": window.get("date", ""),
+            "window_label": window["label"],
+            "window_start": window["start"],
+            "window_end": window["end"],
             "notify_each": "true"
-            if any(token in normalized for token in ("分别发送", "分别发", "发给他们", "发送给他们", "通知他们", "分别通知"))
+            if any(token in normalized for token in ("分别发送", "分别发", "发给他们", "发送给他们", "发给他", "发送给他", "会议链接发给他", "链接发给他", "通知他们", "通知他", "分别通知"))
             else "false",
         }
 
@@ -1631,12 +1696,16 @@ class LarkCLISkill(BaseSkill):
 
         group = parsed["group"]
         duration_minutes = parsed["duration_minutes"]
-        if parsed.get("date"):
-            start, end = self._workday_iso_bounds(date.fromisoformat(parsed["date"]))
-            window_label = parsed["date"]
-        else:
-            start, end = self._next_week_work_bounds()
-            window_label = "下周"
+        start = parsed.get("window_start") or ""
+        end = parsed.get("window_end") or ""
+        window_label = parsed.get("window_label") or parsed.get("date") or "下周"
+        if not start or not end:
+            if parsed.get("date"):
+                start, end = self._workday_iso_bounds(date.fromisoformat(parsed["date"]))
+                window_label = parsed["date"]
+            else:
+                start, end = self._next_week_work_bounds()
+                window_label = "下周"
         return {
             "summary": f"查看群【{group}】成员{window_label}忙闲，找一个 {duration_minutes} 分钟的共同可用时间并创建会议",
             "relevant_skills": ["lark-im", "lark-calendar", "lark-shared"],
@@ -1666,12 +1735,16 @@ class LarkCLISkill(BaseSkill):
 
         attendees = json.loads(parsed["attendees"])
         duration_minutes = parsed["duration_minutes"]
-        if parsed.get("date"):
-            start, end = self._workday_iso_bounds(date.fromisoformat(parsed["date"]))
-            window_label = parsed["date"]
-        else:
-            start, end = self._next_week_work_bounds()
-            window_label = "下周"
+        start = parsed.get("window_start") or ""
+        end = parsed.get("window_end") or ""
+        window_label = parsed.get("window_label") or parsed.get("date") or "下周"
+        if not start or not end:
+            if parsed.get("date"):
+                start, end = self._workday_iso_bounds(date.fromisoformat(parsed["date"]))
+                window_label = parsed["date"]
+            else:
+                start, end = self._next_week_work_bounds()
+                window_label = "下周"
         return {
             "summary": f"查看{', '.join(attendees)}{window_label}忙闲，找一个 {duration_minutes} 分钟的共同可用时间并创建会议",
             "relevant_skills": ["lark-contact", "lark-calendar", "lark-im", "lark-shared"],
@@ -1942,6 +2015,14 @@ class LarkCLISkill(BaseSkill):
     @staticmethod
     def _extract_calendar_summary(query: str) -> str:
         normalized = LarkCLISkill._sanitize_query_text(query)
+        explicit_title_match = re.search(
+            r"(?:主题|标题|名称|名字)(?:为|是|叫|：|:)?\s*[「『“\"']?(?P<title>[^」』”\"'，,。；;\s]+)[」』”\"']?",
+            normalized,
+        )
+        if explicit_title_match:
+            summary = explicit_title_match.group("title").strip()
+            if summary:
+                return summary
         summary_match = re.search(
             r"(?:主题|标题|名称|名字)[：:]\s*(?P<title>[^，,。；;]+)",
             normalized,
@@ -1980,6 +2061,22 @@ class LarkCLISkill(BaseSkill):
     @staticmethod
     def _parse_attendees(query: str) -> List[str]:
         normalized = LarkCLISkill._sanitize_query_text(query)
+        explicit_people_text = ""
+        explicit_patterns = (
+            r"帮(?!我)\s*(?P<people>.+?)\s*(?:在|于|下周|本周|明天|今天|后天|找|安排|创建|开|进行)",
+            r"(?:帮我)?(?:和|跟|与)\s*(?P<people>.+?)\s*(?:在|于|下周|本周|明天|今天|找|安排|创建|开|进行)",
+            r"(?:我和|我跟|我与)\s*(?P<people>.+?)\s*(?:在|于|下周|本周|明天|今天|找|安排|创建|开|进行)",
+            r"(?P<people>[\u4e00-\u9fffA-Za-z0-9_ -]+?(?:\s*(?:和|跟|与|、|,|，)\s*[\u4e00-\u9fffA-Za-z0-9_ -]+)+)\s*(?:在|于|下周|本周|明天|今天|后天|找|安排|创建|开|进行)",
+            r"(?:帮我)?(?:约|邀请)\s*(?P<people>.+?)\s*(?:在|于|下周|本周|明天|今天|找|安排|创建|开|进行)",
+        )
+        for pattern in explicit_patterns:
+            explicit_match = re.search(pattern, normalized)
+            if explicit_match:
+                explicit_people_text = explicit_match.group("people").strip()
+                break
+        if explicit_people_text:
+            return LarkCLISkill._split_people_names(explicit_people_text)
+
         match = re.search(r"(?:参与人|参会人|邀请(?:人)?|邀请参会人)[：:：]?\s*(?P<people>.+)$", normalized)
         if match:
             people_text = match.group("people").strip()
@@ -2619,7 +2716,7 @@ class LarkCLISkill(BaseSkill):
             attendees = json.loads(people_schedule["attendees"])
             summary = people_schedule["summary"]
             duration_minutes = int(people_schedule["duration_minutes"])
-            window_label = people_schedule.get("date") or "下周"
+            window_label = people_schedule.get("window_label") or people_schedule.get("date") or "下周"
             notify_each = people_schedule.get("notify_each") == "true"
 
             resolved_ids: List[str] = []
@@ -2660,10 +2757,13 @@ class LarkCLISkill(BaseSkill):
                 }
 
             if not suggestion_result:
-                if people_schedule.get("date"):
-                    start, end = self._workday_iso_bounds(date.fromisoformat(people_schedule["date"]))
-                else:
-                    start, end = self._next_week_work_bounds()
+                start = people_schedule.get("window_start") or ""
+                end = people_schedule.get("window_end") or ""
+                if not start or not end:
+                    if people_schedule.get("date"):
+                        start, end = self._workday_iso_bounds(date.fromisoformat(people_schedule["date"]))
+                    else:
+                        start, end = self._next_week_work_bounds()
                 attendee_ids = ",".join(resolved_ids[: len(attendees)])
                 return {
                     "done": False,

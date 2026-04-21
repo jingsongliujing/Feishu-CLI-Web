@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, chat, health, lark_setup, models
+from app.api.routes import auth, chat, health, lark_setup, models, scenarios
 from app.config import get_settings
 
 
@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, tags=["Health"])
     app.include_router(auth.router, prefix=settings.API_PREFIX, tags=["Auth"])
     app.include_router(chat.router, prefix=settings.API_PREFIX, tags=["Chat"])
+    app.include_router(scenarios.router, prefix=settings.API_PREFIX, tags=["Scenarios"])
     app.include_router(lark_setup.router, prefix=settings.API_PREFIX, tags=["Lark CLI Setup"])
     app.include_router(models.router, prefix=settings.API_PREFIX, tags=["Model Config"])
     return app
