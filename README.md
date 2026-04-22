@@ -204,6 +204,101 @@ npm run build
 
 把 `frontend/dist/` 交给 Nginx、Caddy 或其它静态文件服务。生产环境需要把 `/api` 反向代理到后端，例如 `http://127.0.0.1:8000`。
 
+## Docker 部署
+
+仓库内置单容器部署方式：构建阶段会打包前端，运行阶段由 FastAPI 同时提供 API 和前端页面。容器内会安装 Node.js、npm、官方 `@larksuite/cli` 和飞书 CLI skills。
+
+### 1. 准备 `.env`
+
+```bash
+cp .env.example .env
+```
+
+Windows PowerShell：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+编辑 `.env`，至少填入模型配置：
+
+```env
+LLM_PROVIDER=openai
+OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen-plus
+OPENAI_API_KEY=your_api_key_here
+API_PREFIX=/api/v1
+LARK_CLI_COMMAND_TIMEOUT=120
+```
+
+### 2. 使用 Docker Compose 启动
+
+```bash
+docker compose up -d --build
+```
+
+访问：
+
+- Web：http://localhost:8000
+- API Docs：http://localhost:8000/docs
+- Health：http://localhost:8000/health
+
+查看日志：
+
+```bash
+docker compose logs -f
+```
+
+停止服务：
+
+```bash
+docker compose down
+```
+
+运行期数据会保存在 Docker volume `feishu-cli-web_feishu_cli_data` 中，对应容器内目录：
+
+```text
+/app/backend/.feishu_cli_data
+```
+
+如果要同时删除数据卷：
+
+```bash
+docker compose down -v
+```
+
+### 3. 只用 Dockerfile
+
+```bash
+docker build -t feishu-cli-web .
+docker run -d \
+  --name feishu-cli-web \
+  --env-file .env \
+  -p 8000:8000 \
+  -v feishu_cli_data:/app/backend/.feishu_cli_data \
+  feishu-cli-web
+```
+
+Windows PowerShell：
+
+```powershell
+docker build -t feishu-cli-web .
+docker run -d `
+  --name feishu-cli-web `
+  --env-file .env `
+  -p 8000:8000 `
+  -v feishu_cli_data:/app/backend/.feishu_cli_data `
+  feishu-cli-web
+```
+
+### 4. Docker 常见问题
+
+- 构建时下载依赖失败：确认服务器可以访问 npm registry、PyPI 和飞书 CLI 相关包；公司网络下通常需要配置 Docker 代理。
+- `docker compose` 不存在：新版 Docker Desktop 自带 `docker compose`；旧版本可能是 `docker-compose`。
+- 授权后重启丢失：确认已经挂载 `/app/backend/.feishu_cli_data` 数据卷。
+- 前端可以打开但 API 失败：Docker 单容器模式下前端和 API 都在 `8000` 端口，通常不需要额外反向代理；如果放到 Nginx 后面，请把 `/api`、`/docs`、`/openapi.json` 转发到容器。
+- 需要备份数据：备份 Docker volume 中的 `.feishu_cli_data`，重点是 `feishu_cli_web.sqlite3` 和 `lark_cli_users/`。
+
 ## 默认账号
 
 首次启动时，如果数据库中没有账号，系统会自动创建：

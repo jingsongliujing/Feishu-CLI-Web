@@ -1,10 +1,15 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import auth, chat, health, lark_setup, models, scenarios
 from app.config import get_settings
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
 
 
 @asynccontextmanager
@@ -38,7 +43,40 @@ def create_app() -> FastAPI:
     app.include_router(scenarios.router, prefix=settings.API_PREFIX, tags=["Scenarios"])
     app.include_router(lark_setup.router, prefix=settings.API_PREFIX, tags=["Lark CLI Setup"])
     app.include_router(models.router, prefix=settings.API_PREFIX, tags=["Model Config"])
+    _mount_frontend(app)
     return app
+
+
+def _frontend_dist_candidates() -> list[Path]:
+    settings = get_settings()
+    candidates: list[Path] = []
+    if settings.FRONTEND_DIST_DIR.strip():
+        candidates.append(Path(settings.FRONTEND_DIST_DIR).expanduser())
+    candidates.extend(
+        [
+            ROOT_DIR / "frontend" / "dist",
+            ROOT_DIR / "backend" / "static",
+            Path(__file__).resolve().parent / "static",
+        ]
+    )
+    return candidates
+
+
+def _mount_frontend(app: FastAPI) -> None:
+    dist_dir = next((path.resolve() for path in _frontend_dist_candidates() if (path / "index.html").exists()), None)
+    if not dist_dir:
+        return
+
+    assets_dir = dist_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="frontend-assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(full_path: str) -> FileResponse:
+        requested = (dist_dir / full_path).resolve()
+        if requested.is_file() and dist_dir in requested.parents:
+            return FileResponse(requested)
+        return FileResponse(dist_dir / "index.html")
 
 
 app = create_app()

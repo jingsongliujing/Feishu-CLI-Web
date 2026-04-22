@@ -1,0 +1,16 @@
+services:
+  feishu-cli-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: feishu-cli-web:latest
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - feishu_cli_data:/app/backend/.feishu_cli_data
+    restart: unless-stopped
+
+volumes:
+  feishu_cli_data:
