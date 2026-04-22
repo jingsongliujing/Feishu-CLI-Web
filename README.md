@@ -206,7 +206,7 @@ npm run build
 
 ## Docker 部署
 
-仓库内置单容器部署方式：构建阶段会打包前端，运行阶段由 FastAPI 同时提供 API 和前端页面。容器内会安装 Node.js、npm、官方 `@larksuite/cli` 和飞书 CLI skills。
+仓库内置单容器部署方式：构建阶段会打包前端，运行阶段由 FastAPI 同时提供 API 和前端页面。容器内会安装 Node.js、npm、Git、官方 `@larksuite/cli` 和飞书 CLI skills。
 
 ### 1. 准备 `.env`
 
@@ -293,7 +293,8 @@ docker run -d `
 
 ### 4. Docker 常见问题
 
-- 构建时下载依赖失败：确认服务器可以访问 npm registry、PyPI 和飞书 CLI 相关包；公司网络下通常需要配置 Docker 代理。
+- 构建时下载依赖失败：确认服务器可以访问 npm registry、PyPI、GitHub 和飞书 CLI 相关包；公司网络下通常需要配置 Docker 代理。
+- `Failed to clone repository` 或 `spawn git ENOENT`：说明镜像里缺少 Git。请确认使用的是最新 Dockerfile，里面会安装 `git`。
 - `docker compose` 不存在：新版 Docker Desktop 自带 `docker compose`；旧版本可能是 `docker-compose`。
 - 授权后重启丢失：确认已经挂载 `/app/backend/.feishu_cli_data` 数据卷。
 - 前端可以打开但 API 失败：Docker 单容器模式下前端和 API 都在 `8000` 端口，通常不需要额外反向代理；如果放到 Nginx 后面，请把 `/api`、`/docs`、`/openapi.json` 转发到容器。
