@@ -86,6 +86,31 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             state_json TEXT NOT NULL DEFAULT '{}',
             updated_at INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS system_settings (
+            key TEXT PRIMARY KEY,
+            value_json TEXT NOT NULL DEFAULT '{}',
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS scheduled_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            original_request TEXT NOT NULL,
+            task_message TEXT NOT NULL,
+            schedule_type TEXT NOT NULL,
+            time_of_day TEXT NOT NULL DEFAULT '',
+            timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+            next_run_at INTEGER NOT NULL,
+            last_run_at INTEGER,
+            status TEXT NOT NULL DEFAULT 'active',
+            run_count INTEGER NOT NULL DEFAULT 0,
+            max_runs INTEGER,
+            last_result_json TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
         """
     )
 
@@ -176,6 +201,7 @@ def delete_users(conn: sqlite3.Connection, accounts: list[str], dry_run: bool, p
         conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (account,))
         conn.execute("DELETE FROM chat_sessions WHERE user_id = ?", (account,))
         conn.execute("DELETE FROM execution_records WHERE user_id = ?", (account,))
+        conn.execute("DELETE FROM scheduled_tasks WHERE user_id = ?", (account,))
         conn.execute("DELETE FROM profile_states WHERE profile = ?", (profile,))
         conn.execute("DELETE FROM accounts WHERE account = ?", (account,))
 

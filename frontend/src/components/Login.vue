@@ -9,6 +9,14 @@ const password = ref('000000')
 const errorMessage = ref('')
 const isSubmitting = ref(false)
 
+const parseApiJson = async (response: Response) => {
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    throw new Error('后端没有返回 JSON，请确认前端代理已指向正确的后端服务。')
+  }
+  return response.json()
+}
+
 const handleLogin = async () => {
   if (!account.value.trim() || !password.value) {
     errorMessage.value = '请输入账号和密码'
@@ -27,7 +35,7 @@ const handleLogin = async () => {
         password: password.value
       })
     })
-    const data = await response.json()
+    const data = await parseApiJson(response)
     if (!response.ok || data.code !== 0) {
       throw new Error(data.detail || data.message || '登录失败')
     }

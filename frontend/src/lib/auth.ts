@@ -31,3 +31,18 @@ export const buildAuthHeaders = (): Record<string, string> => {
   const token = getAuthToken()
   return token ? { 'X-Auth-Token': token } : {}
 }
+
+export const verifyAuthSession = async (): Promise<boolean> => {
+  const token = getAuthToken()
+  if (!token) return false
+  try {
+    const response = await fetch('/api/v1/auth/me', { headers: buildAuthHeaders() })
+    if (response.status === 401) {
+      clearAuthSession()
+      return false
+    }
+    return response.ok
+  } catch (_error) {
+    return true
+  }
+}

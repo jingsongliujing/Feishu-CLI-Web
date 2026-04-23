@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { getAuthToken } from '../lib/auth'
+import { clearAuthSession, getAuthToken, verifyAuthSession } from '../lib/auth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -9,12 +9,21 @@ const router = createRouter({
   ]
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const token = getAuthToken()
   if (to.path !== '/login' && !token) {
     return '/login'
   }
-  if (to.path === '/login' && token) {
+  if (!token) {
+    return true
+  }
+
+  const valid = await verifyAuthSession()
+  if (!valid) {
+    clearAuthSession()
+    return to.path === '/login' ? true : '/login'
+  }
+  if (to.path === '/login') {
     return '/'
   }
   return true

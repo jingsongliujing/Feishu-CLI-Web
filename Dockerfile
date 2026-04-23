@@ -41,11 +41,11 @@ COPY backend/ /app/backend/
 COPY .env.example /app/.env.example
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 
-RUN mkdir -p /app/backend/.feishu_cli_data
+RUN mkdir -p /app/.feishu_cli_data
 
 WORKDIR /app/backend
 EXPOSE 8000
-VOLUME ["/app/backend/.feishu_cli_data"]
+VOLUME ["/app/.feishu_cli_data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()" || exit 1

@@ -186,6 +186,27 @@ npm run dev
 - Web：http://localhost:3000
 - API Docs：http://localhost:8000/docs
 
+开发模式下，Vite 会把 `/api` 自动代理到后端。默认目标是：
+
+```text
+http://127.0.0.1:8000
+```
+
+如果后端不在本机，例如跑在另一台服务器或局域网机器上，可以临时覆盖：
+
+Linux/macOS：
+
+```bash
+VITE_API_TARGET=http://192.168.1.10:8000 npm run dev
+```
+
+Windows PowerShell：
+
+```powershell
+$env:VITE_API_TARGET="http://192.168.1.10:8000"
+npm run dev
+```
+
 如果你没有提交 `package-lock.json`，可以把 `npm ci` 换成 `npm install`。当前仓库已经包含 lock 文件，优先用 `npm ci` 可以保证不同机器安装结果一致。
 
 启动后可以先做一次最小检查：
@@ -260,7 +281,7 @@ docker compose down
 运行期数据会保存在 Docker volume `feishu-cli-web_feishu_cli_data` 中，对应容器内目录：
 
 ```text
-/app/backend/.feishu_cli_data
+/app/.feishu_cli_data
 ```
 
 如果要同时删除数据卷：
@@ -277,7 +298,7 @@ docker run -d \
   --name feishu-cli-web \
   --env-file .env \
   -p 8000:8000 \
-  -v feishu_cli_data:/app/backend/.feishu_cli_data \
+  -v feishu_cli_data:/app/.feishu_cli_data \
   feishu-cli-web
 ```
 
@@ -289,7 +310,7 @@ docker run -d `
   --name feishu-cli-web `
   --env-file .env `
   -p 8000:8000 `
-  -v feishu_cli_data:/app/backend/.feishu_cli_data `
+  -v feishu_cli_data:/app/.feishu_cli_data `
   feishu-cli-web
 ```
 
@@ -298,7 +319,7 @@ docker run -d `
 - 构建时下载依赖失败：确认服务器可以访问 npm registry、PyPI、GitHub 和飞书 CLI 相关包；公司网络下通常需要配置 Docker 代理。
 - `Failed to clone repository` 或 `spawn git ENOENT`：说明镜像里缺少 Git。请确认使用的是最新 Dockerfile，里面会安装 `git`。
 - `docker compose` 不存在：新版 Docker Desktop 自带 `docker compose`；旧版本可能是 `docker-compose`。
-- 授权后重启丢失：确认已经挂载 `/app/backend/.feishu_cli_data` 数据卷。
+- 授权后重启丢失：确认已经挂载 `/app/.feishu_cli_data` 数据卷。
 - 前端可以打开但 API 失败：Docker 单容器模式下前端和 API 都在 `8000` 端口，通常不需要额外反向代理；如果放到 Nginx 后面，请把 `/api`、`/docs`、`/openapi.json` 转发到容器。
 - 需要备份数据：备份 Docker volume 中的 `.feishu_cli_data`，重点是 `feishu_cli_web.sqlite3` 和 `lark_cli_users/`。
 
@@ -440,6 +461,64 @@ python backend/data/manage_users.py --delete-file backend/data/users_delete.json
 
 它不会强制重装 CLI，也不会重建已有应用配置。
 
+## 定时任务
+
+当用户提出明显的定时需求时，系统会把它识别为后台定时任务，而不是立即执行飞书写操作。
+
+支持的常见表达：
+
+```text
+每天上午9点帮我给飞书CLI测试群发一条消息：请大家填写日报
+每日 18:00 帮我总结【项目群】今天的消息
+明天上午10点帮我给张三发消息：记得参加评审会
+2026年4月25日 9点帮我创建项目复盘文档
+```
+
+定时任务闭环：
+
+1. 用户输入定时需求
+2. 系统生成执行计划预览，标记为“创建定时任务”
+3. 用户点击“确认执行”
+4. 系统把任务写入 SQLite 的 `scheduled_tasks` 表
+5. 后端调度器到点自动执行飞书任务
+6. 执行结果写回当前会话和执行记录
+7. 一次性任务执行后变为 `completed`；每日任务会自动计算下一次执行时间
+
+为了避免误判，系统只把带有明确时刻的请求识别为定时任务，例如 `9点`、`09:30`、`下午三点`。像“明天找一个 1 小时空闲时间”这类日程规划请求不会被当成后台定时任务。
+
+输入框上方提供「定时任务」面板：
+
+- 全局开关：关闭后不会创建新的定时任务，后台调度器也不会执行已有任务；再次开启后，处于 `active` 状态且到期的任务会继续执行。
+- 调度配置：可以调整后台轮询间隔，配置会写入 SQLite 并在下一轮调度生效。
+- 任务列表：只显示当前登录账号已添加的定时任务，避免不同账号之间互相看到任务内容。
+- 单任务开关：每个任务可以单独暂停或恢复，适合临时停用某个重复任务。
+- 删除保护：任务必须先关闭为 `paused` 状态，前端二次确认后才能删除；后端也会拒绝删除未关闭的任务。
+
+`.env` 支持配置定时任务默认值：
+
+```env
+SCHEDULED_TASKS_ENABLED=true
+SCHEDULED_TASK_POLL_SECONDS=30
+```
+
+说明：
+
+- `SCHEDULED_TASKS_ENABLED` 只决定首次启动或 SQLite 中还没有运行时配置时的默认开关。
+- 页面上的全局开关会写入 SQLite 的 `system_settings` 表，重启服务后仍然生效。
+- `SCHEDULED_TASK_POLL_SECONDS` 是后台调度轮询间隔，建议保持 `30` 秒；系统会限制在 `5` 到 `3600` 秒之间。
+
+可以通过 API 查看和管理当前账号的定时任务：
+
+```bash
+curl -H "X-Auth-Token: <login_token>" "http://127.0.0.1:8000/api/v1/scheduled-tasks"
+curl -H "X-Auth-Token: <login_token>" http://127.0.0.1:8000/api/v1/scheduled-tasks/config
+curl -X POST -H "Content-Type: application/json" -H "X-Auth-Token: <login_token>" \
+  -d '{"enabled":false,"poll_seconds":30}' http://127.0.0.1:8000/api/v1/scheduled-tasks/config
+curl -X POST -H "X-Auth-Token: <login_token>" http://127.0.0.1:8000/api/v1/scheduled-tasks/1/pause
+curl -X POST -H "X-Auth-Token: <login_token>" http://127.0.0.1:8000/api/v1/scheduled-tasks/1/resume
+curl -X DELETE -H "X-Auth-Token: <login_token>" http://127.0.0.1:8000/api/v1/scheduled-tasks/1
+```
+
 ## 数据目录
 
 运行期数据默认集中在：
@@ -454,6 +533,7 @@ python backend/data/manage_users.py --delete-file backend/data/users_delete.json
 说明：
 
 - `feishu_cli_web.sqlite3`：账号、登录 token、聊天会话、消息、执行记录、profile 状态
+- `scheduled_tasks` 表：后台定时任务、下次执行时间、执行状态和最近执行结果
 - `lark_cli_profiles/`：Web 侧 profile 状态
 - `lark_cli_users/`：每个 Web 用户独立的官方 `lark-cli` HOME
 
@@ -490,6 +570,12 @@ X-Auth-Token: <login_token>
 | `GET /api/v1/sessions` | 会话列表 |
 | `GET /api/v1/scenarios` | 场景模板列表 |
 | `POST /api/v1/scenarios/render` | 渲染场景模板 |
+| `GET /api/v1/scheduled-tasks` | 当前账号定时任务列表 |
+| `GET /api/v1/scheduled-tasks/config` | 定时任务全局配置 |
+| `POST /api/v1/scheduled-tasks/config` | 开启或关闭全局定时任务 |
+| `POST /api/v1/scheduled-tasks/{task_id}/pause` | 暂停定时任务 |
+| `POST /api/v1/scheduled-tasks/{task_id}/resume` | 恢复定时任务 |
+| `DELETE /api/v1/scheduled-tasks/{task_id}` | 删除已暂停的定时任务 |
 | `GET /api/v1/models/config` | 模型配置 |
 | `POST /api/v1/models/config` | 保存模型配置 |
 | `GET /api/v1/lark/setup/status` | 飞书 CLI 状态 |
@@ -502,6 +588,7 @@ X-Auth-Token: <login_token>
 - 后端使用 Python 3.10+，并通过 `python -m pip install -r backend/requirements.txt` 安装依赖。
 - 前端使用 Node.js 16+，并通过 `npm ci` 安装依赖。
 - `.env` 已配置模型 API Key、模型名称和 API 地址。
+- 如需启用定时任务，确认 `.env` 中 `SCHEDULED_TASKS_ENABLED=true`，并在页面「定时任务」面板中保持全局开关开启。
 - `.feishu_cli_data/` 所在目录对后端进程可写。
 - 服务器能执行 `npm`、`npx` 和 `lark-cli`。如果没有预装 `lark-cli`，首次授权页面会引导安装。
 - 生产环境已经把前端 `/api` 反向代理到后端。

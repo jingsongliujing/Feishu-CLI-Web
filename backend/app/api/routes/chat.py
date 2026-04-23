@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.api.routes.auth import AccountInfo, get_current_account
 from app.core.execution_records import execution_record_store
 from app.core.local_sessions import session_store
+from app.core.scheduled_tasks import parse_schedule_intent, scheduled_task_config_store, scheduled_task_store
 from app.skills.base import SkillContext, SkillResult
 from app.skills.lark_cli.skill import LarkCLISkill
 
@@ -23,6 +24,7 @@ class ChatRequest(BaseModel):
     session_id: str = ""
     command: str = ""
     confirm_write: bool = False
+    confirm_plan: bool = False
     timeout: int | None = None
     stream: bool = True
 
@@ -47,6 +49,33 @@ def _result_payload(result: SkillResult) -> dict[str, Any]:
     }
 
 
+def _scheduled_task_message(task: dict[str, Any]) -> str:
+    next_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(task["next_run_at"])))
+    label = "每天" if task.get("schedule_type") == "daily" else "一次性"
+    return (
+        f"已创建{label}定时任务。\n\n"
+        f"- 任务 ID：{task['id']}\n"
+        f"- 执行内容：{task['task_message']}\n"
+        f"- 下次执行：{next_text}（{task.get('timezone') or 'Asia/Shanghai'}）\n\n"
+        "到达时间后，系统会自动执行该飞书任务，并把执行结果写入当前会话和执行记录。"
+    )
+
+
+def _schedule_confirmation_message(intent: Any) -> str:
+    preview = intent.to_preview()
+    return (
+        "检测到这是一个定时任务，请先确认后再创建：\n\n"
+        f"- 执行内容：{preview['task_message']}\n"
+        f"- 触发类型：{'每天重复' if preview['schedule_type'] == 'daily' else '一次性'}\n"
+        f"- 下次执行：{preview['next_run_at_text']}（{preview['timezone']}）\n\n"
+        "如果确认创建，请通过执行计划预览点击“确认执行”。"
+    )
+
+
+def _schedule_disabled_message() -> str:
+    return "定时任务当前已关闭。请先在输入框上方的「定时任务」面板打开开关，再创建新的定时任务。"
+
+
 @router.post("/chat")
 async def chat(request: ChatRequest, account: AccountInfo = Depends(get_current_account)):
     settings = get_settings()
@@ -62,8 +91,40 @@ async def chat(request: ChatRequest, account: AccountInfo = Depends(get_current_
         metadata={"created_at": int(time.time()), "account_name": account.name},
     )
     timeout = request.timeout or settings.LARK_CLI_COMMAND_TIMEOUT
+    schedule_intent = parse_schedule_intent(request.message)
+    schedule_enabled = scheduled_task_config_store.enabled()
 
     if not request.stream:
+        if schedule_intent and not schedule_enabled:
+            message = _schedule_disabled_message()
+            metadata = {"schedule_disabled": True, "schedule": schedule_intent.to_preview()}
+            session_store.append_message(context.user_id, context.session_id, "user", request.message)
+            session_store.append_message(context.user_id, context.session_id, "assistant", message, metadata)
+            return {"code": 0, "data": {"type": "final", "success": False, "content": message, "metadata": metadata}}
+
+        if schedule_intent and not request.confirm_plan:
+            message = _schedule_confirmation_message(schedule_intent)
+            metadata = {"schedule_required": True, "schedule": schedule_intent.to_preview()}
+            session_store.append_message(context.user_id, context.session_id, "user", request.message)
+            session_store.append_message(context.user_id, context.session_id, "assistant", message, metadata)
+            return {"code": 0, "data": {"type": "final", "success": False, "content": message, "metadata": metadata}}
+
+        if schedule_intent and request.confirm_plan:
+            task = scheduled_task_store.add(user_id=context.user_id, session_id=context.session_id, intent=schedule_intent)
+            message = _scheduled_task_message(task)
+            metadata = {"scheduled_task_created": True, "scheduled_task": task}
+            session_store.append_message(context.user_id, context.session_id, "user", request.message)
+            session_store.append_message(context.user_id, context.session_id, "assistant", message, metadata)
+            execution_record_store.add(
+                user_id=context.user_id,
+                session_id=context.session_id,
+                request=request.message,
+                plan={"type": "scheduled_task", "schedule": schedule_intent.to_preview()},
+                executed_commands=[],
+                success=True,
+            )
+            return {"code": 0, "data": {"type": "final", "success": True, "content": message, "metadata": metadata}}
+
         result = await skill.execute(
             context,
             query=request.message,
@@ -95,6 +156,42 @@ async def chat(request: ChatRequest, account: AccountInfo = Depends(get_current_
         progress_events: list[str] = []
         try:
             yield _serialize_sse({"type": "session", "session_id": context.session_id})
+            if schedule_intent and not schedule_enabled:
+                full_response = _schedule_disabled_message()
+                final_metadata = {"schedule_disabled": True, "schedule": schedule_intent.to_preview()}
+                session_store.append_message(context.user_id, context.session_id, "user", request.message)
+                session_store.append_message(context.user_id, context.session_id, "assistant", full_response, final_metadata)
+                yield _serialize_sse({"type": "metadata", "metadata": final_metadata})
+                yield _serialize_sse({"type": "content", "content": full_response})
+                yield _serialize_sse({"type": "done", "session_id": context.session_id})
+                return
+            if schedule_intent and request.confirm_plan:
+                task = scheduled_task_store.add(user_id=context.user_id, session_id=context.session_id, intent=schedule_intent)
+                full_response = _scheduled_task_message(task)
+                final_metadata = {"scheduled_task_created": True, "scheduled_task": task}
+                session_store.append_message(context.user_id, context.session_id, "user", request.message)
+                session_store.append_message(context.user_id, context.session_id, "assistant", full_response, final_metadata)
+                execution_record_store.add(
+                    user_id=context.user_id,
+                    session_id=context.session_id,
+                    request=request.message,
+                    plan={"type": "scheduled_task", "schedule": schedule_intent.to_preview()},
+                    executed_commands=[],
+                    success=True,
+                )
+                yield _serialize_sse({"type": "metadata", "metadata": final_metadata})
+                yield _serialize_sse({"type": "content", "content": full_response})
+                yield _serialize_sse({"type": "done", "session_id": context.session_id})
+                return
+            if schedule_intent and not request.confirm_plan:
+                full_response = _schedule_confirmation_message(schedule_intent)
+                final_metadata = {"schedule_required": True, "schedule": schedule_intent.to_preview()}
+                session_store.append_message(context.user_id, context.session_id, "user", request.message)
+                session_store.append_message(context.user_id, context.session_id, "assistant", full_response, final_metadata)
+                yield _serialize_sse({"type": "metadata", "metadata": final_metadata})
+                yield _serialize_sse({"type": "content", "content": full_response})
+                yield _serialize_sse({"type": "done", "session_id": context.session_id})
+                return
             async for event in skill.execute_stream(
                 context,
                 query=request.message,
@@ -163,6 +260,40 @@ async def preview_chat_plan(
     )
     skill = LarkCLISkill()
     plan = await skill.preview_plan(context, request.message)
+    schedule_intent = parse_schedule_intent(request.message)
+    if schedule_intent:
+        schedule = schedule_intent.to_preview()
+        schedule_enabled = scheduled_task_config_store.enabled()
+        if not schedule_enabled:
+            plan.update(
+                {
+                    "summary": "定时任务当前已关闭，无法创建新的后台任务。",
+                    "intent_type": "scheduled_task",
+                    "need_confirmation": False,
+                    "reason_for_confirmation": "请先在「定时任务」面板打开全局开关。",
+                    "schedule": schedule,
+                    "commands": [],
+                    "schedule_disabled": True,
+                }
+            )
+            return {"code": 0, "data": {"session_id": context.session_id, "plan": plan}}
+        plan.update(
+            {
+                "summary": f"创建定时任务：{schedule['task_message']}，下次执行时间 {schedule['next_run_at_text']}",
+                "intent_type": "scheduled_task",
+                "need_confirmation": True,
+                "reason_for_confirmation": "该请求会创建一个后台定时任务，到点后自动执行飞书操作，需要先确认。",
+                "schedule": schedule,
+                "commands": [
+                    {
+                        "command": "scheduled-task:create",
+                        "reason": "将用户请求保存为定时任务，由后台调度器按计划执行。",
+                        "expected": "scheduled_task",
+                        "write": True,
+                    }
+                ],
+            }
+        )
     return {"code": 0, "data": {"session_id": context.session_id, "plan": plan}}
 
 

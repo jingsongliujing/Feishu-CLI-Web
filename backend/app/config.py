@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     LARK_CLI_LLM_TIMEOUT: int = 25
     LARK_CLI_COMMAND_TIMEOUT: int = 30
     FRONTEND_DIST_DIR: str = ""
+    SCHEDULED_TASKS_ENABLED: bool = True
+    SCHEDULED_TASK_POLL_SECONDS: int = 30
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),

@@ -67,6 +67,28 @@ interface PlanPreview {
   cli_state?: Record<string, any>
 }
 
+interface ScheduledTaskConfig {
+  enabled: boolean
+  poll_seconds: number
+  timezone: string
+}
+
+interface ScheduledTaskItem {
+  id: number
+  user_id: string
+  session_id: string
+  original_request: string
+  task_message: string
+  schedule_type: string
+  time_of_day: string
+  timezone: string
+  next_run_at: number
+  last_run_at?: number
+  status: string
+  run_count: number
+  last_result?: Record<string, any>
+}
+
 const router = useRouter()
 const messages = ref<Message[]>([])
 const inputText = ref('')
@@ -93,6 +115,12 @@ const scenarioTemplates = ref<ScenarioTemplate[]>([])
 const showScenarioPanel = ref(false)
 const selectedScenario = ref<ScenarioTemplate | null>(null)
 const scenarioValues = ref<Record<string, string>>({})
+const showSchedulePanel = ref(false)
+const scheduleLoading = ref(false)
+const scheduleSaving = ref(false)
+const scheduledConfig = ref<ScheduledTaskConfig>({ enabled: true, poll_seconds: 30, timezone: 'Asia/Shanghai' })
+const scheduledTasks = ref<ScheduledTaskItem[]>([])
+const scheduleStatus = ref('')
 
 const showLarkSetup = ref(false)
 const larkSetupRunning = ref(false)
@@ -147,6 +175,23 @@ const skills: Skill[] = [
 
 const authHeaders = () => buildAuthHeaders()
 
+const parseApiJson = async (response: Response) => {
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    throw new Error('后端没有返回 JSON，请确认服务已重启并且 /api 已正确转发到后端。')
+  }
+  return response.json()
+}
+
+const apiErrorMessage = async (response: Response, fallback: string) => {
+  try {
+    const payload = await parseApiJson(response)
+    return payload.detail || payload.message || fallback
+  } catch (_error) {
+    return fallback
+  }
+}
+
 const currentUserId = computed(() => currentAccount.value?.account || 'local')
 
 const handleMessagesScroll = () => {
@@ -175,6 +220,40 @@ const syncSessionUrl = (id: string, replace = true) => {
 const formatTime = (timestamp: number) => {
   if (!timestamp) return ''
   return new Date(timestamp * 1000).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+const formatDateTime = (timestamp?: number) => {
+  if (!timestamp) return '-'
+  return new Date(timestamp * 1000).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+const scheduleTypeText = (type: string) => (type === 'daily' ? '每天重复' : '一次性')
+
+const scheduleStatusText = (status: string) => {
+  const map: Record<string, string> = {
+    active: '运行中',
+    paused: '已暂停',
+    running: '执行中',
+    completed: '已完成',
+    failed: '失败'
+  }
+  return map[status] || status
+}
+
+const canDeleteScheduledTask = (task: ScheduledTaskItem) => task.status === 'paused'
+
+const scheduledTaskResultText = (task: ScheduledTaskItem) => {
+  const result = task.last_result || {}
+  if (!Object.keys(result).length) return ''
+  if (typeof result.message === 'string' && result.message.trim()) return result.message.trim()
+  if (typeof result.success === 'boolean') return result.success ? '最近执行成功' : '最近执行失败'
+  return ''
 }
 
 const normalizeDisplayText = (value: string) => (value || '').replace(/\\n/g, '\n')
@@ -219,10 +298,143 @@ const normalizeSetupStep = (step: any): SetupStep => {
 const loadScenarios = async () => {
   try {
     const response = await fetch('/api/v1/scenarios', { headers: authHeaders() })
-    const payload = await response.json()
+    const payload = await parseApiJson(response)
     scenarioTemplates.value = payload.data || []
   } catch (error) {
     console.error('load scenarios failed:', error)
+  }
+}
+
+const loadScheduledTasks = async () => {
+  scheduleLoading.value = true
+  scheduleStatus.value = ''
+  try {
+    const [configResponse, tasksResponse] = await Promise.all([
+      fetch(`/api/v1/scheduled-tasks/config?_=${Date.now()}`, { headers: authHeaders(), cache: 'no-store' }),
+      fetch(`/api/v1/scheduled-tasks?limit=500&_=${Date.now()}`, { headers: authHeaders(), cache: 'no-store' })
+    ])
+    if (configResponse.status === 401 || tasksResponse.status === 401) {
+      clearAuthSession()
+      await router.replace('/login')
+      return
+    }
+    const configPayload = await parseApiJson(configResponse)
+    const tasksPayload = await parseApiJson(tasksResponse)
+    scheduledConfig.value = {
+      enabled: Boolean(configPayload.data?.enabled),
+      poll_seconds: Number(configPayload.data?.poll_seconds || 30),
+      timezone: configPayload.data?.timezone || 'Asia/Shanghai'
+    }
+    scheduledTasks.value = tasksPayload.data || []
+  } catch (error: any) {
+    scheduleStatus.value = error.message || '定时任务加载失败'
+  } finally {
+    scheduleLoading.value = false
+  }
+}
+
+const toggleSchedulePanel = async () => {
+  showSchedulePanel.value = !showSchedulePanel.value
+  showScenarioPanel.value = false
+  showModelPanel.value = false
+  if (showSchedulePanel.value) await loadScheduledTasks()
+}
+
+const setScheduledTasksEnabled = async (enabled: boolean) => {
+  scheduleSaving.value = true
+  scheduleStatus.value = ''
+  try {
+    const response = await fetch('/api/v1/scheduled-tasks/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ enabled })
+    })
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+    const payload = await parseApiJson(response)
+    scheduledConfig.value = {
+      enabled: Boolean(payload.data?.enabled),
+      poll_seconds: Number(payload.data?.poll_seconds || scheduledConfig.value.poll_seconds),
+      timezone: payload.data?.timezone || scheduledConfig.value.timezone
+    }
+    scheduleStatus.value = enabled ? '定时任务已开启' : '定时任务已关闭'
+  } catch (error: any) {
+    scheduleStatus.value = error.message || '配置保存失败'
+  } finally {
+    scheduleSaving.value = false
+  }
+}
+
+const saveScheduledTaskConfig = async () => {
+  scheduleSaving.value = true
+  scheduleStatus.value = ''
+  try {
+    const response = await fetch('/api/v1/scheduled-tasks/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({
+        enabled: scheduledConfig.value.enabled,
+        poll_seconds: scheduledConfig.value.poll_seconds
+      })
+    })
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+    const payload = await parseApiJson(response)
+    scheduledConfig.value = {
+      enabled: Boolean(payload.data?.enabled),
+      poll_seconds: Number(payload.data?.poll_seconds || 30),
+      timezone: payload.data?.timezone || 'Asia/Shanghai'
+    }
+    scheduleStatus.value = '定时任务配置已保存'
+  } catch (error: any) {
+    scheduleStatus.value = error.message || '配置保存失败'
+  } finally {
+    scheduleSaving.value = false
+  }
+}
+
+const updateScheduledTaskStatus = async (task: ScheduledTaskItem, action: 'pause' | 'resume') => {
+  scheduleStatus.value = ''
+  try {
+    const response = await fetch(`/api/v1/scheduled-tasks/${task.id}/${action}`, {
+      method: 'POST',
+      headers: authHeaders()
+    })
+    if (!response.ok) throw new Error(await apiErrorMessage(response, `HTTP error! status: ${response.status}`))
+    await loadScheduledTasks()
+  } catch (error: any) {
+    scheduleStatus.value = error.message || '任务状态更新失败'
+  }
+}
+
+const toggleScheduledTask = async (task: ScheduledTaskItem) => {
+  if (task.status === 'active') {
+    await updateScheduledTaskStatus(task, 'pause')
+  } else if (task.status === 'paused') {
+    await updateScheduledTaskStatus(task, 'resume')
+  }
+}
+
+const deleteScheduledTask = async (task: ScheduledTaskItem) => {
+  scheduleStatus.value = ''
+  if (!canDeleteScheduledTask(task)) {
+    scheduleStatus.value = '请先关闭任务，再删除。'
+    return
+  }
+  const confirmed = window.confirm(`确认删除这个定时任务吗？\n\n${task.task_message}\n\n删除后不可恢复。`)
+  if (!confirmed) return
+  try {
+    const response = await fetch(`/api/v1/scheduled-tasks/${task.id}`, {
+      method: 'DELETE',
+      headers: authHeaders()
+    })
+    if (response.status === 409) {
+      scheduleStatus.value = await apiErrorMessage(response, '请先关闭任务，再删除。')
+      return
+    }
+    if (!response.ok) throw new Error(await apiErrorMessage(response, `HTTP error! status: ${response.status}`))
+    scheduleStatus.value = '定时任务已删除'
+    await loadScheduledTasks()
+  } catch (error: any) {
+    scheduleStatus.value = error.message || '任务删除失败'
   }
 }
 
@@ -244,7 +456,7 @@ const applyScenarioTemplate = async () => {
       values: scenarioValues.value
     })
   })
-  const payload = await response.json()
+  const payload = await parseApiJson(response)
   inputText.value = payload.data?.message || ''
   showScenarioPanel.value = false
   await nextTick()
@@ -278,7 +490,7 @@ const previewPlan = async (message: string, skill = currentSkill.value) => {
       return
     }
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const payload = await response.json()
+    const payload = await parseApiJson(response)
     if (payload.data?.session_id) {
       sessionId.value = payload.data.session_id
       syncSessionUrl(sessionId.value)
@@ -343,7 +555,7 @@ const loadHistory = async () => {
       await router.replace('/login')
       return
     }
-    const data = await response.json()
+    const data = await parseApiJson(response)
     historyList.value = (data.data || []).map((item: any) => ({
       id: item.session_id,
       title: item.title || '新会话',
@@ -360,7 +572,7 @@ const loadChat = async (id: string, silent = false) => {
   try {
     const response = await fetch(`/api/v1/sessions/${encodeURIComponent(id)}/messages`, { headers: authHeaders() })
     if (!response.ok) return
-    const data = await response.json()
+    const data = await parseApiJson(response)
     const list = data.data?.messages || data.data || []
     messages.value = list.map((m: any) => ({
       id: Date.now() + Math.random(),
@@ -396,7 +608,7 @@ const newChat = () => {
   showSidebar.value = false
 }
 
-const runChatRequest = async (message: string, assistantMsgIndex: number, confirmWrite = false, skill = currentSkill.value) => {
+const runChatRequest = async (message: string, assistantMsgIndex: number, confirmWrite = false, skill = currentSkill.value, confirmPlan = false) => {
   const response = await fetch('/api/v1/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -406,6 +618,7 @@ const runChatRequest = async (message: string, assistantMsgIndex: number, confir
       session_id: sessionId.value,
       stream: true,
       confirm_write: confirmWrite,
+      confirm_plan: confirmPlan,
       skill: skill === 'auto' ? undefined : skill
     })
   })
@@ -520,12 +733,13 @@ const executePlannedMessage = async () => {
   await scrollToBottom()
 
   try {
-    await runChatRequest(text, assistantMsgIndex, false, skill)
+    await runChatRequest(text, assistantMsgIndex, false, skill, true)
     if (isWriteConfirmationMessage(messages.value[assistantMsgIndex].content)) {
       pendingWriteMessage.value = text
       pendingWriteSkill.value = skill
       showWriteConfirm.value = true
     }
+    await loadScheduledTasks()
     await loadHistory()
   } catch (error: any) {
     messages.value[assistantMsgIndex].content = error.message || '网络错误，请重试'
@@ -577,6 +791,7 @@ const selectSkill = (skillId: string) => {
   currentSkill.value = skillId
   showModelPanel.value = false
   showScenarioPanel.value = false
+  showSchedulePanel.value = false
 }
 
 const appendLarkSetupTerminal = (chunk: string) => {
@@ -654,7 +869,7 @@ const startLarkSetup = async () => {
 
 const refreshLarkSetup = async () => {
   const response = await fetch('/api/v1/lark/setup/status', { headers: authHeaders() })
-  const payload = await response.json()
+  const payload = await parseApiJson(response)
   const data = payload.data || {}
   larkSetupForceAuth.value = false
   showLarkSetup.value = !data.ready
@@ -663,8 +878,8 @@ const refreshLarkSetup = async () => {
 }
 
 const loadModelConfig = async () => {
-  const response = await fetch('/api/v1/models/config')
-  const payload = await response.json()
+  const response = await fetch('/api/v1/models/config', { headers: authHeaders() })
+  const payload = await parseApiJson(response)
   modelPresets.value = payload.data?.presets || []
   currentModel.value = payload.data?.current || {}
   modelBaseUrl.value = currentModel.value.base_url || ''
@@ -684,7 +899,7 @@ const saveModelConfig = async (useDefaultQwenKey = false) => {
   try {
     const response = await fetch('/api/v1/models/config', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({
         preset: modelPreset.value,
         api_key: modelApiKey.value,
@@ -694,7 +909,7 @@ const saveModelConfig = async (useDefaultQwenKey = false) => {
         use_default_qwen_key: useDefaultQwenKey
       })
     })
-    const payload = await response.json()
+    const payload = await parseApiJson(response)
     currentModel.value = payload.data?.current || {}
     modelStatus.value = '模型配置已保存'
     modelApiKey.value = ''
@@ -715,12 +930,13 @@ const closeFloatingPanels = (event: MouseEvent) => {
   if (!target.closest('.skill-selector')) {
     showModelPanel.value = false
     showScenarioPanel.value = false
+    showSchedulePanel.value = false
   }
 }
 
 onMounted(async () => {
   document.addEventListener('click', closeFloatingPanels)
-  await Promise.all([loadHistory(), refreshLarkSetup(), loadModelConfig(), loadScenarios()])
+  await Promise.all([loadHistory(), refreshLarkSetup(), loadModelConfig(), loadScenarios(), loadScheduledTasks()])
   const urlSessionId = new URLSearchParams(window.location.search).get('session')
   if (urlSessionId) await loadChat(urlSessionId, true)
   isInitializing.value = false
@@ -919,8 +1135,17 @@ onUnmounted(() => {
                 >
                   <span>{{ skill.name }}</span>
                 </button>
-                <button type="button" class="skill-btn scenario-btn" @click.stop="showScenarioPanel = !showScenarioPanel">场景模板</button>
-                <button type="button" class="skill-btn model-btn" @click.stop="showModelPanel = !showModelPanel">模型配置</button>
+                <button type="button" class="skill-btn scenario-btn" @click.stop="showScenarioPanel = !showScenarioPanel; showSchedulePanel = false; showModelPanel = false">场景模板</button>
+                <button
+                  type="button"
+                  class="skill-btn schedule-btn"
+                  :class="{ active: showSchedulePanel }"
+                  @click.stop="toggleSchedulePanel"
+                >
+                  定时任务
+                  <span class="schedule-dot" :class="{ off: !scheduledConfig.enabled }"></span>
+                </button>
+                <button type="button" class="skill-btn model-btn" @click.stop="showModelPanel = !showModelPanel; showScenarioPanel = false; showSchedulePanel = false">模型配置</button>
               </div>
 
               <div v-if="showScenarioPanel" class="scenario-popover" @click.stop>
@@ -943,6 +1168,69 @@ onUnmounted(() => {
                   </label>
                   <div class="model-actions">
                     <button type="button" @click="applyScenarioTemplate">填入输入框</button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="showSchedulePanel" class="schedule-popover" @click.stop>
+                <div class="schedule-panel-head">
+                  <div>
+                    <strong>定时任务</strong>
+                    <p>当前账号：{{ currentAccount?.account || '-' }} · {{ scheduledConfig.enabled ? '全局调度已开启' : '全局调度已关闭' }} · 轮询间隔 {{ scheduledConfig.poll_seconds }} 秒</p>
+                  </div>
+                  <div class="schedule-head-actions">
+                    <button type="button" class="schedule-mini-btn" :disabled="scheduleLoading" @click="loadScheduledTasks">刷新</button>
+                    <button
+                      type="button"
+                      class="schedule-switch"
+                      :class="{ enabled: scheduledConfig.enabled }"
+                      :disabled="scheduleSaving"
+                      @click="setScheduledTasksEnabled(!scheduledConfig.enabled)"
+                    >
+                      {{ scheduledConfig.enabled ? '关闭' : '开启' }}
+                    </button>
+                  </div>
+                </div>
+                <div class="schedule-config-row">
+                  <label>
+                    <span>轮询间隔（秒）</span>
+                    <input v-model.number="scheduledConfig.poll_seconds" type="number" min="5" max="3600" step="5" />
+                  </label>
+                  <button type="button" class="schedule-mini-btn" :disabled="scheduleSaving" @click="saveScheduledTaskConfig">保存配置</button>
+                </div>
+                <div v-if="scheduleStatus" class="schedule-status">{{ scheduleStatus }}</div>
+                <div v-if="scheduleLoading" class="schedule-empty">正在加载定时任务...</div>
+                <div v-else-if="!scheduledTasks.length" class="schedule-empty">当前账号暂无已添加的定时任务</div>
+                <div v-else class="schedule-list">
+                  <div v-for="task in scheduledTasks" :key="task.id" class="schedule-card">
+                    <div class="schedule-card-main">
+                      <strong>{{ task.task_message }}</strong>
+                      <p>{{ scheduleTypeText(task.schedule_type) }} · {{ task.time_of_day || '-' }} · {{ scheduleStatusText(task.status) }}</p>
+                      <span>任务 ID：{{ task.id }}</span>
+                      <span>下次执行：{{ formatDateTime(task.next_run_at) }}</span>
+                      <span>上次执行：{{ formatDateTime(task.last_run_at) }} · 已执行 {{ task.run_count || 0 }} 次</span>
+                      <span v-if="scheduledTaskResultText(task)">最近结果：{{ scheduledTaskResultText(task) }}</span>
+                    </div>
+                    <div class="schedule-card-actions">
+                      <button
+                        v-if="task.status === 'active' || task.status === 'paused'"
+                        type="button"
+                        class="schedule-mini-btn"
+                        :class="{ enabled: task.status === 'active' }"
+                        @click="toggleScheduledTask(task)"
+                      >
+                        {{ task.status === 'active' ? '关闭任务' : '开启任务' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="schedule-mini-btn danger"
+                        :disabled="!canDeleteScheduledTask(task)"
+                        :title="canDeleteScheduledTask(task) ? '删除定时任务' : '请先关闭任务，再删除'"
+                        @click="deleteScheduledTask(task)"
+                      >
+                        删除
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

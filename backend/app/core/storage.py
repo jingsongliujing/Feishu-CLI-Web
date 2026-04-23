@@ -98,6 +98,37 @@ class SQLiteStore:
                     state_json TEXT NOT NULL DEFAULT '{}',
                     updated_at INTEGER NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS system_settings (
+                    key TEXT PRIMARY KEY,
+                    value_json TEXT NOT NULL DEFAULT '{}',
+                    updated_at INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    original_request TEXT NOT NULL,
+                    task_message TEXT NOT NULL,
+                    schedule_type TEXT NOT NULL,
+                    time_of_day TEXT NOT NULL DEFAULT '',
+                    timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+                    next_run_at INTEGER NOT NULL,
+                    last_run_at INTEGER,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    run_count INTEGER NOT NULL DEFAULT 0,
+                    max_runs INTEGER,
+                    last_result_json TEXT NOT NULL DEFAULT '{}',
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
+                    ON scheduled_tasks(status, next_run_at);
+
+                CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_user
+                    ON scheduled_tasks(user_id, created_at DESC);
                 """
             )
 
@@ -117,6 +148,11 @@ class SQLiteStore:
     def execute(self, sql: str, params: Iterable[Any] = ()) -> None:
         with self._lock, self.connect() as conn:
             conn.execute(sql, tuple(params))
+
+    def execute_insert(self, sql: str, params: Iterable[Any] = ()) -> int:
+        with self._lock, self.connect() as conn:
+            cursor = conn.execute(sql, tuple(params))
+            return int(cursor.lastrowid)
 
     def query_one(self, sql: str, params: Iterable[Any] = ()) -> sqlite3.Row | None:
         with self._lock, self.connect() as conn:

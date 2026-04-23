@@ -9,7 +9,7 @@ services:
     env_file:
       - .env
     volumes:
-      - feishu_cli_data:/app/backend/.feishu_cli_data
+      - feishu_cli_data:/app/.feishu_cli_data
     restart: unless-stopped
 
 volumes:
