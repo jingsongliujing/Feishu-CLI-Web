@@ -141,8 +141,12 @@ lark-cli slides xml_presentation.slide create --as user \
 
 ```json
 {
-  "slide_id": "slide_example_id",
-  "revision_id": 100
+  "code": 0,
+  "data": {
+    "slide_id": "slide_example_id",
+    "revision_id": 100
+  },
+  "msg": "success"
 }
 ```
 
@@ -150,8 +154,8 @@ lark-cli slides xml_presentation.slide create --as user \
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `slide_id` | string | 新幻灯片的唯一标识 |
-| `revision_id` | integer | 演示文稿最新版本号 |
+| `data.slide_id` | string | 新幻灯片的唯一标识 |
+| `data.revision_id` | integer | 演示文稿最新版本号 |
 
 ## slide 元素可用子元素
 
@@ -160,6 +164,11 @@ lark-cli slides xml_presentation.slide create --as user \
 | `<style>` | 页面样式（背景填充） |
 | `<data>` | 图形元素容器（shape、img、table、chart 等） |
 | `<note>` | 演讲者备注 |
+
+> [!IMPORTANT]
+> **本地图片必须先上传**：`xml_presentation.slide.create` 不识别 `@./local.png` 占位符（那是 `+create --slides` 的语法糖）。直接调本接口添加带图新页时，必须先用 [`slides +media-upload`](lark-slides-media-upload.md) 拿到 `file_token`，再写进 `<img src="<file_token>">`。
+>
+> 如果是从零开始建带图 PPT，**强烈建议改用 [`slides +create --slides '[...]'`](lark-slides-create.md#本地图片path-占位符)** 一步搞定（自动上传 + 替换 token）。
 
 ## 常见错误
 

@@ -1,7 +1,7 @@
 ---
 name: lark-vc
 version: 1.0.0
-description: "飞书视频会议：查询会议记录、获取会议纪要产物（总结、待办、章节、逐字稿）。1. 查询已经结束的会议数量或详情时使用本技能(如昨天 | 上周 | 今天已经开过的会议等场景)，查询未开始的会议日程使用 lark-calendar 技能。2. 支持通过关键词、时间范围、组织者、参与者、会议室等筛选条件搜索会议记录。3. 获取或整理会议纪要时使用本技能。"
+description: "飞书视频会议：查询会议记录、获取会议纪要产物（总结、待办、章节、逐字稿）。1. 查询已经结束的会议数量或详情时使用本技能(如历史日期｜ 昨天 | 上周 | 今天已经开过的会议等场景)，查询未开始的会议日程使用 lark-calendar 技能。2. 支持通过关键词、时间范围、组织者、参与者、会议室等筛选条件搜索会议记录。3. 获取或整理会议纪要时使用本技能。"
 metadata:
   requires:
     bins: ["lark-cli"]
@@ -35,13 +35,13 @@ metadata:
 3. 读取智能纪要（`note_doc_token`）内容时，纪要文档的**第一个 `<whiteboard>`** 标签是封面图（AI 生成的总结可视化），应同时下载展示给用户：
 ```bash
 # 1. 读取纪要内容
-lark-cli docs +fetch --doc <note_doc_token>
+lark-cli docs +fetch --api-version v2 --doc <note_doc_token> --doc-format markdown
 # 2. 从返回的 markdown 中提取第一个 <whiteboard token="xxx"/> 的 token
-# 3. 下载封面图到 artifact 目录（和逐字稿同目录，保持产物归拢）
+# 3. 下载封面图到聚合目录（和逐字稿、录像同目录，保持产物归拢）
 #    并非所有纪要都有封面画板，没有 <whiteboard> 标签时跳过即可
-lark-cli docs +media-download --type whiteboard --token <whiteboard_token> --output ./artifact-<title>/cover
+lark-cli docs +media-download --type whiteboard --token <whiteboard_token> --output ./minutes/<minute_token>/cover
 ```
-> **产物目录规范**：同一会议的所有下载产物（封面图、逐字稿等）统一放到 `artifact-<title>/` 目录下，不要散落在当前工作目录。
+> **产物目录规范**：同一会议的所有下载产物（录像、逐字稿、封面图等）统一放到 `./minutes/{minute_token}/` 目录下。这与 `minutes +download` 和 `vc +notes --minute-tokens` 的默认落点保持一致，便于 Agent 聚合。显式路径（如封面图）需手动对齐到同一目录。
 
 > **纪要相关文档 — 根据用户意图选择：**
 > - `note_doc_token` → **AI 智能纪要**（AI 总结 + 待办 + 章节）
@@ -63,7 +63,7 @@ lark-cli drive metas batch_query --data '{"request_docs": [{"doc_type": "docx", 
 3. 需要获取文档内容时，使用 `lark-cli docs +fetch`。
 ```bash
 # 获取文档内容
-lark-cli docs +fetch --doc <doc_token>
+lark-cli docs +fetch --api-version v2 --doc <doc_token> --doc-format markdown
 ```
 
 ## 资源关系
@@ -87,7 +87,9 @@ Meeting (视频会议)
 > **优先级**：当用户搜索历史会议时，应优先使用 `vc +search` 而非 `calendar events search`。calendar 的搜索面向日程，vc 的搜索面向已结束的会议记录，支持按参会人、组织者、会议室等维度过滤。
 >
 > **路由规则**：如果用户在问“开过的会”“今天开了哪些会”“最近参加过什么会”“已结束的会议”“历史会议记录”，优先使用 `vc +search`。只有在查询未来日程、待开的会、agenda 时才优先使用 [lark-calendar](../lark-calendar/SKILL.md)。
-> 
+>
+> **妙记边界**：`+notes` 负责纪要内容、逐字稿和 AI 产物；妙记基础信息请优先看 [`+recording`](references/lark-vc-recording.md) 与 [lark-minutes](../lark-minutes/SKILL.md)。
+>
 > **特殊情况**: 当用户查询“今天有哪些会议”时，通过 `vc +search` 查询今天开过的会议记录，同时使用 lark-calendar 技能查询今天还未开始的会议，统一整理后展示给用户。
 
 ## Shortcuts（推荐优先使用）
