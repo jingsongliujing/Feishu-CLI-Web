@@ -162,7 +162,12 @@ OPENAI_API_KEY=your_api_key_here
 APP_NAME=Feishu CLI Web
 API_PREFIX=/api/v1
 LARK_CLI_COMMAND_TIMEOUT=120
+
+VITE_API_TARGET=http://后端地址:8000
 ```
+#### 如果某个人的后端不在本机，比如跑在服务器、Docker、WSL 或另一台机器上，就让他自己在 frontend/.env 里配置：
+
+VITE_API_TARGET=http://后端地址:8000
 
 ### 4. 启动后端
 
