@@ -48,8 +48,33 @@ def _normalize_key(label: str, index: int) -> str:
     return f"field_{index}"
 
 
+def _needs_ai_content_generation(text: str) -> bool:
+    normalized = text.lower()
+    return any(
+        token in normalized
+        for token in (
+            "总结",
+            "纪要",
+            "摘要",
+            "报告",
+            "文档",
+            "邮件",
+            "slides",
+            "ppt",
+            "演示",
+            "周报",
+            "方案",
+            "大纲",
+            "扩写",
+            "润色",
+            "整理成",
+        )
+    )
+
+
 def fallback_template(requirement: str) -> dict[str, Any]:
     text = requirement.strip() or "执行一个常用飞书流程"
+    needs_ai_content = _needs_ai_content_generation(text)
     labels = []
     for pattern, label in [
         (r"【([^】]+)】", None),
@@ -74,6 +99,8 @@ def fallback_template(requirement: str) -> dict[str, Any]:
         "visibility": "private",
         "prompt": prompt,
         "fields": fields,
+        "requires_ai_content_generation": needs_ai_content,
+        "content_generation_label": "AI 扩写内容" if needs_ai_content else "",
         "change_note": "AI 生成初稿",
     }
 
@@ -107,6 +134,12 @@ def _sanitize_template(payload: dict[str, Any], requirement: str) -> dict[str, A
         "visibility": "private",
         "prompt": str(payload.get("prompt") or fallback["prompt"]).strip(),
         "fields": clean_fields,
+        "requires_ai_content_generation": bool(
+            payload.get("requires_ai_content_generation", fallback["requires_ai_content_generation"])
+        ),
+        "content_generation_label": str(
+            payload.get("content_generation_label") or fallback["content_generation_label"] or ""
+        ).strip(),
         "change_note": "AI 生成初稿",
     }
 
@@ -126,9 +159,10 @@ async def generate_template_draft(requirement: str) -> dict[str, Any]:
 
     system_prompt = (
         "你是飞书自动化流程模板设计专家。请把用户的一句话需求转换成可发布的模板草稿。\n"
-        "只返回 JSON 对象，不要 Markdown。字段：title, category, description, prompt, fields。\n"
+        "只返回 JSON 对象，不要 Markdown。字段：title, category, description, prompt, fields, requires_ai_content_generation, content_generation_label。\n"
         "fields 是数组，每项包含 key、label、placeholder。key 必须是英文、数字或下划线。\n"
         "prompt 必须使用 {{key}} 作为变量占位符，并保留用户要达成的完整流程目标。\n"
+        "如果模板会生成文档、纪要、总结、报告、邮件、Slides、方案、周报等内容型产物，requires_ai_content_generation 设为 true，并给出简短 content_generation_label；纯查询、上传、权限、发固定消息等不需要扩写的流程设为 false。\n"
         "模板应该让普通用户能直接填字段使用，避免抽象说明。"
     )
     user_prompt = f"用户需求：{requirement}"
@@ -161,4 +195,3 @@ async def generate_template_draft(requirement: str) -> dict[str, Any]:
     if not payload:
         return fallback_template(requirement)
     return _sanitize_template(payload, requirement)
-

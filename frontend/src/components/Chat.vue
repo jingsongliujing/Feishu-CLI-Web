@@ -1174,9 +1174,9 @@ onUnmounted(() => {
                   </button>
                 </div>
                 <div v-if="selectedScenario" class="scenario-form">
-                  <label v-if="selectedScenario.requires_ai_content_generation" class="scenario-toggle">
+                  <label class="scenario-toggle">
                     <input v-model="scenarioAiContentGeneration" type="checkbox" />
-                    <span>{{ selectedScenario.content_generation_label || 'AI 扩写内容' }}</span>
+                    <span>{{ selectedScenario.content_generation_label || '执行前 AI 扩写' }}</span>
                   </label>
                   <label v-for="field in selectedScenario.fields" :key="field.key">
                     <span>{{ field.label }}</span>

@@ -23,6 +23,8 @@ interface UserTemplate {
   published_at?: number
   prompt: string
   fields: TemplateField[]
+  requires_ai_content_generation?: boolean
+  content_generation_label?: string
 }
 
 interface TemplateVersion {
@@ -30,6 +32,8 @@ interface TemplateVersion {
   version: number
   prompt: string
   fields: TemplateField[]
+  requires_ai_content_generation?: boolean
+  content_generation_label?: string
   editor: { account: string; name: string }
   change_note: string
   created_at: number
@@ -55,6 +59,8 @@ const form = ref({
   description: '',
   visibility: 'private' as 'private' | 'public',
   prompt: '',
+  requires_ai_content_generation: false,
+  content_generation_label: 'AI 扩写内容',
   change_note: '',
   fields: [] as TemplateField[]
 })
@@ -111,6 +117,8 @@ const resetForm = () => {
     description: '',
     visibility: 'private',
     prompt: '',
+    requires_ai_content_generation: false,
+    content_generation_label: 'AI 扩写内容',
     change_note: '',
     fields: [{ key: 'input', label: '输入', placeholder: '请输入内容' }]
   }
@@ -124,6 +132,8 @@ const selectTemplate = async (template: UserTemplate) => {
     description: template.description,
     visibility: template.visibility,
     prompt: template.prompt,
+    requires_ai_content_generation: Boolean(template.requires_ai_content_generation),
+    content_generation_label: template.content_generation_label || 'AI 扩写内容',
     change_note: '',
     fields: template.fields.map((item) => ({ ...item }))
   }
@@ -218,6 +228,8 @@ const generateTemplateDraft = async () => {
       description: draft.description || '',
       visibility: draft.visibility || 'private',
       prompt: draft.prompt || '',
+      requires_ai_content_generation: Boolean(draft.requires_ai_content_generation),
+      content_generation_label: draft.content_generation_label || 'AI 扩写内容',
       change_note: draft.change_note || 'AI 生成初稿',
       fields: Array.isArray(draft.fields) ? draft.fields : []
     }
@@ -306,6 +318,7 @@ onMounted(async () => {
           @click="selectTemplate(template)"
         >
           <span class="badge" :class="template.visibility">{{ template.visibility === 'public' ? '公开' : '私有' }}</span>
+          <span v-if="template.requires_ai_content_generation" class="badge ai">AI 扩写</span>
           <strong>{{ template.title }}</strong>
           <small>{{ template.category }} · v{{ template.current_version }}</small>
           <p>{{ template.description || '暂无描述' }}</p>
@@ -373,6 +386,20 @@ onMounted(async () => {
           </label>
         </div>
 
+        <div class="content-generation-box">
+          <label class="toggle-row">
+            <input v-model="form.requires_ai_content_generation" type="checkbox" :disabled="!canEdit" />
+            <span>
+              <strong>执行前 AI 扩写</strong>
+              <small>适合文档、纪要、总结、报告、邮件、Slides 等内容型模板；开启后用户使用模板时也可以再次切换。</small>
+            </span>
+          </label>
+          <label>
+            <span>按钮文案</span>
+            <input v-model="form.content_generation_label" :disabled="!canEdit || !form.requires_ai_content_generation" placeholder="例如：AI 扩写纪要 / AI 生成正文" />
+          </label>
+        </div>
+
         <label class="full">
           <span>描述</span>
           <input v-model="form.description" :disabled="!canEdit" />
@@ -411,6 +438,7 @@ onMounted(async () => {
             <span v-if="version.is_current">当前</span>
           </div>
           <p>{{ version.change_note || '无版本说明' }}</p>
+          <small v-if="version.requires_ai_content_generation">AI 扩写：{{ version.content_generation_label || '已开启' }}</small>
           <small>{{ version.editor.name }}（{{ version.editor.account }}）</small>
           <small>{{ formatTime(version.created_at) }}</small>
           <button type="button" :disabled="!isOwner || version.is_current || saving" @click="rollbackVersion(version)">
@@ -568,6 +596,37 @@ button.primary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.content-generation-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.8fr);
+  gap: 12px;
+  margin: 4px 0 12px;
+  border: 1px solid #d0dcff;
+  border-radius: 12px;
+  background: #f8faff;
+  padding: 12px;
+}
+
+.toggle-row {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.toggle-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: #3370ff;
+}
+
+.toggle-row small {
+  color: #646a73;
+  display: block;
+  font-weight: 500;
+  line-height: 1.45;
+  margin-top: 2px;
 }
 
 label,
@@ -897,6 +956,7 @@ label span {
 
   .ai-draft-panel,
   .form-grid,
+  .content-generation-box,
   .field-row {
     grid-template-columns: 1fr;
   }

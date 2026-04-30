@@ -79,9 +79,9 @@ def render_template_from_user_template(template: dict, values: dict[str, str]) -
 
 
 def append_content_generation_hint(template: dict | None, message: str) -> str:
-    if not template or not template.get("requires_ai_content_generation"):
+    if not template:
         return message
-    label = template.get("content_generation_label") or "AI 内容生成"
+    label = template.get("content_generation_label") or "AI 扩写内容"
     return (
         f"{message}\n\n"
         f"内容生成开关：已启用「{label}」。"

@@ -25,6 +25,8 @@ class TemplateSaveRequest(BaseModel):
     description: str = ""
     prompt: str = Field(min_length=1)
     fields: list[TemplateField] = Field(default_factory=list)
+    requires_ai_content_generation: bool = False
+    content_generation_label: str = ""
     visibility: str = "private"
     change_note: str = ""
 

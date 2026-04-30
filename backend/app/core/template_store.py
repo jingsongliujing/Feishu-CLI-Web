@@ -14,6 +14,7 @@ def _slug(value: str) -> str:
 
 def _row_to_template(row: Any, version_row: Any | None = None) -> dict[str, Any]:
     fields = store.loads(version_row["fields_json"] if version_row else row["fields_json"], [])
+    source = version_row or row
     return {
         "id": f"user_template_{row['id']}",
         "template_id": row["id"],
@@ -28,13 +29,16 @@ def _row_to_template(row: Any, version_row: Any | None = None) -> dict[str, Any]
         "published_at": row["published_at"],
         "prompt": version_row["prompt"] if version_row else row["prompt"],
         "fields": fields if isinstance(fields, list) else [],
+        "requires_ai_content_generation": bool(source["requires_ai_content_generation"]),
+        "content_generation_label": source["content_generation_label"] or "",
     }
 
 
 def _current_template_select(where: str, params: tuple[Any, ...]) -> Any | None:
     return store.query_one(
         f"""
-        SELECT t.*, v.prompt, v.fields_json, v.editor_account, v.editor_name
+        SELECT t.*, v.prompt, v.fields_json, v.requires_ai_content_generation,
+               v.content_generation_label, v.editor_account, v.editor_name
         FROM user_templates t
         JOIN user_template_versions v
           ON v.template_id = t.id AND v.version = t.current_version
@@ -56,7 +60,8 @@ def list_accessible_templates(account: AccountInfo, scope: str = "accessible") -
     if scope == "mine":
         rows = store.query_all(
             """
-            SELECT t.*, v.prompt, v.fields_json
+            SELECT t.*, v.prompt, v.fields_json, v.requires_ai_content_generation,
+                   v.content_generation_label
             FROM user_templates t
             JOIN user_template_versions v
               ON v.template_id = t.id AND v.version = t.current_version
@@ -68,7 +73,8 @@ def list_accessible_templates(account: AccountInfo, scope: str = "accessible") -
     elif scope == "community":
         rows = store.query_all(
             """
-            SELECT t.*, v.prompt, v.fields_json
+            SELECT t.*, v.prompt, v.fields_json, v.requires_ai_content_generation,
+                   v.content_generation_label
             FROM user_templates t
             JOIN user_template_versions v
               ON v.template_id = t.id AND v.version = t.current_version
@@ -79,7 +85,8 @@ def list_accessible_templates(account: AccountInfo, scope: str = "accessible") -
     else:
         rows = store.query_all(
             """
-            SELECT t.*, v.prompt, v.fields_json
+            SELECT t.*, v.prompt, v.fields_json, v.requires_ai_content_generation,
+                   v.content_generation_label
             FROM user_templates t
             JOIN user_template_versions v
               ON v.template_id = t.id AND v.version = t.current_version
@@ -138,14 +145,17 @@ def create_template(account: AccountInfo, payload: dict[str, Any]) -> dict[str, 
     store.execute(
         """
         INSERT INTO user_template_versions(
-            template_id, version, prompt, fields_json, editor_account, editor_name, change_note, created_at
+            template_id, version, prompt, fields_json, requires_ai_content_generation,
+            content_generation_label, editor_account, editor_name, change_note, created_at
         )
-        VALUES (?, 1, ?, ?, ?, ?, ?, ?)
+        VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             template_id,
             payload.get("prompt") or "",
             store.dumps(payload.get("fields") or []),
+            1 if payload.get("requires_ai_content_generation") else 0,
+            (payload.get("content_generation_label") or "").strip(),
             account.account,
             account.name,
             payload.get("change_note") or "创建模板",
@@ -187,15 +197,18 @@ def update_template(template_id: int, account: AccountInfo, payload: dict[str, A
     store.execute(
         """
         INSERT INTO user_template_versions(
-            template_id, version, prompt, fields_json, editor_account, editor_name, change_note, created_at
+            template_id, version, prompt, fields_json, requires_ai_content_generation,
+            content_generation_label, editor_account, editor_name, change_note, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             template_id,
             version,
             payload.get("prompt") if payload.get("prompt") is not None else row["prompt"],
             store.dumps(payload.get("fields") if payload.get("fields") is not None else store.loads(row["fields_json"], [])),
+            1 if payload.get("requires_ai_content_generation", row["requires_ai_content_generation"]) else 0,
+            (payload.get("content_generation_label") if payload.get("content_generation_label") is not None else row["content_generation_label"] or "").strip(),
             account.account,
             account.name,
             payload.get("change_note") or f"保存版本 {version}",
@@ -222,7 +235,8 @@ def list_versions(template_id: int, account: AccountInfo) -> list[dict[str, Any]
         raise PermissionError("no access")
     versions = store.query_all(
         """
-        SELECT id, version, prompt, fields_json, editor_account, editor_name, change_note, created_at
+        SELECT id, version, prompt, fields_json, requires_ai_content_generation,
+               content_generation_label, editor_account, editor_name, change_note, created_at
         FROM user_template_versions
         WHERE template_id = ?
         ORDER BY version DESC
@@ -235,6 +249,8 @@ def list_versions(template_id: int, account: AccountInfo) -> list[dict[str, Any]
             "version": item["version"],
             "prompt": item["prompt"],
             "fields": store.loads(item["fields_json"], []),
+            "requires_ai_content_generation": bool(item["requires_ai_content_generation"]),
+            "content_generation_label": item["content_generation_label"] or "",
             "editor": {"account": item["editor_account"], "name": item["editor_name"]},
             "change_note": item["change_note"],
             "created_at": item["created_at"],
@@ -278,6 +294,8 @@ def rollback_template(template_id: int, version: int, account: AccountInfo) -> d
             "visibility": row["visibility"],
             "prompt": version_row["prompt"],
             "fields": store.loads(version_row["fields_json"], []),
+            "requires_ai_content_generation": bool(version_row["requires_ai_content_generation"]),
+            "content_generation_label": version_row["content_generation_label"] or "",
             "change_note": f"回滚到版本 {version}",
         },
     )
