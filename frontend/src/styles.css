@@ -1421,3 +1421,531 @@ select {
     font-size: 28px;
   }
 }
+
+/* Modern workspace refresh */
+:root {
+  --text: #172033;
+  --muted: #667085;
+  --faint: #98a2b3;
+  --line: #d7dee8;
+  --soft-line: #e8edf3;
+  --panel: #ffffff;
+  --panel-soft: #f7f9fc;
+  --shell: #ffffff;
+  --shell-2: #f2f6fa;
+  --accent: #0f766e;
+  --accent-2: #2563eb;
+  --accent-soft: #e7f7f4;
+  --success: #059669;
+  --danger: #dc2626;
+  --warning: #b7791f;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05), 0 8px 22px rgba(16, 24, 40, 0.05);
+  --shadow-md: 0 18px 48px rgba(16, 24, 40, 0.12);
+  --shadow-glow: 0 14px 32px rgba(15, 118, 110, 0.18);
+}
+
+body,
+.app-container {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(15, 118, 110, 0.08), transparent 28%),
+    linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%);
+}
+
+.sidebar {
+  background: rgba(255, 255, 255, 0.92);
+  border-right: 1px solid rgba(215, 222, 232, 0.95);
+  color: var(--text);
+  box-shadow: 12px 0 34px rgba(16, 24, 40, 0.06);
+  backdrop-filter: blur(18px);
+}
+
+.sidebar-top {
+  border-bottom-color: var(--soft-line);
+}
+
+.logo-icon {
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  box-shadow: 0 10px 26px rgba(15, 118, 110, 0.22);
+}
+
+.logo-text,
+.history-title,
+.user-name {
+  color: var(--text);
+}
+
+.new-chat-btn {
+  border-color: #cfe7e3;
+  background: #ecfdf8;
+  color: #0f766e;
+  box-shadow: none;
+}
+
+.new-chat-btn:hover {
+  border-color: #7dd3c7;
+  background: #dffaf4;
+  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.12);
+}
+
+.history-header,
+.history-time,
+.user-id,
+.no-history,
+.no-history-tip {
+  color: var(--muted);
+}
+
+.history-item {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+}
+
+.history-item:hover,
+.history-item.active {
+  border-color: #dbeafe;
+  background: #f0f7ff;
+  box-shadow: none;
+}
+
+.history-delete,
+.logout-mini {
+  border-color: #dbe2ec;
+  background: #f8fafc;
+  color: #475467;
+}
+
+.history-delete:hover,
+.logout-mini:hover {
+  border-color: #99d8d0;
+  background: #eefbf7;
+  color: #0f766e;
+}
+
+.user-profile {
+  border-color: var(--soft-line);
+  background: #f8fafc;
+}
+
+.user-avatar {
+  background: #e7f7f4;
+  color: #0f766e;
+}
+
+.chat-messages {
+  padding-top: 40px;
+}
+
+.welcome {
+  max-width: 960px;
+}
+
+.welcome-badge {
+  border-color: #b8e3dd;
+  background: #e7f7f4;
+  color: #0f766e;
+}
+
+.welcome h1 {
+  color: #111827;
+  font-weight: 850;
+}
+
+.quick-grid button,
+.message-content,
+.input-box,
+.scenario-popover,
+.schedule-popover,
+.model-popover {
+  border-color: rgba(215, 222, 232, 0.95);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--shadow-sm);
+  border-radius: 12px;
+}
+
+.quick-grid button:hover {
+  border-color: #99d8d0;
+  background: #fbfefd;
+  box-shadow: 0 16px 36px rgba(16, 24, 40, 0.08);
+}
+
+.message-content {
+  border-radius: 12px;
+  padding: 15px 17px;
+}
+
+.message.user .message-content {
+  background: linear-gradient(135deg, #0f766e, #2563eb);
+  box-shadow: 0 14px 30px rgba(37, 99, 235, 0.16);
+}
+
+.chat-input-container {
+  background: linear-gradient(to top, rgba(244, 247, 251, 0.98) 76%, rgba(244, 247, 251, 0));
+}
+
+.input-box {
+  max-width: 980px;
+  box-shadow: 0 18px 46px rgba(16, 24, 40, 0.12);
+}
+
+.skill-btn {
+  border-color: #dde5ef;
+  background: #f8fafc;
+  color: #475467;
+}
+
+.skill-btn:hover,
+.skill-btn.active {
+  border-color: #99d8d0;
+  background: #e7f7f4;
+  color: #0f766e;
+  box-shadow: none;
+}
+
+.send-btn,
+.login-button,
+.lark-setup-auth-button {
+  background: linear-gradient(135deg, #0f766e, #2563eb);
+  box-shadow: 0 12px 28px rgba(15, 118, 110, 0.18);
+}
+
+.send-btn:hover:not(:disabled),
+.login-button:hover:not(:disabled),
+.lark-setup-auth-button:hover {
+  box-shadow: 0 16px 34px rgba(37, 99, 235, 0.18);
+}
+
+.scenario-list button,
+.schedule-card,
+.schedule-status,
+.plan-command-item,
+.lark-progress,
+.lark-setup-step {
+  border-color: #e3e9f1;
+  background: #fbfcfe;
+  border-radius: 10px;
+}
+
+.scenario-list button.active,
+.scenario-list button:hover {
+  border-color: #99d8d0;
+  background: #f0fbf8;
+}
+
+.scenario-form input,
+.model-popover input,
+.model-popover select,
+.schedule-config-row input,
+.login-label input {
+  border-color: #d7dee8;
+  background: #ffffff;
+  border-radius: 10px;
+}
+
+.scenario-form input:focus,
+.model-popover input:focus,
+.model-popover select:focus,
+.schedule-config-row input:focus,
+.login-label input:focus {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+}
+
+.mobile-menu-btn {
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+/* ByteDance / Feishu style pass */
+:root {
+  --text: #1f2329;
+  --muted: #646a73;
+  --faint: #8f959e;
+  --line: #dee0e3;
+  --soft-line: #eff0f1;
+  --panel: #ffffff;
+  --panel-soft: #f7f8fa;
+  --accent: #1456f0;
+  --accent-2: #3370ff;
+  --accent-soft: #eaf0ff;
+  --danger: #f54a45;
+  --warning: #f59e0b;
+  --shadow-sm: 0 1px 2px rgba(31, 35, 41, 0.06);
+  --shadow-md: 0 12px 32px rgba(31, 35, 41, 0.1);
+  --shadow-glow: 0 10px 24px rgba(20, 86, 240, 0.16);
+}
+
+body,
+.app-container,
+.login-page {
+  background: #f5f6f7;
+  background-image: none;
+}
+
+button:hover:not(:disabled) {
+  transform: none;
+}
+
+.sidebar {
+  width: 280px;
+  background: #ffffff;
+  border-right: 1px solid var(--soft-line);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.sidebar-top {
+  gap: 14px;
+}
+
+.logo-icon {
+  border-radius: 10px;
+  background: #1456f0;
+  box-shadow: none;
+}
+
+.new-chat-btn {
+  border-color: #1456f0;
+  background: #1456f0;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.new-chat-btn:hover {
+  border-color: #3370ff;
+  background: #3370ff;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.history-header {
+  color: #8f959e;
+  font-weight: 700;
+}
+
+.history-item {
+  border-radius: 8px;
+  padding: 10px 9px;
+}
+
+.history-item:hover,
+.history-item.active {
+  border-color: transparent;
+  background: #f2f3f5;
+}
+
+.history-item.active .history-title {
+  color: #1456f0;
+}
+
+.history-delete,
+.logout-mini {
+  border-color: transparent;
+  background: transparent;
+  color: #646a73;
+}
+
+.history-delete:hover,
+.logout-mini:hover {
+  border-color: transparent;
+  background: #f2f3f5;
+  color: #1456f0;
+  box-shadow: none;
+}
+
+.user-profile {
+  border-color: var(--soft-line);
+  background: #f7f8fa;
+  border-radius: 10px;
+}
+
+.user-avatar {
+  background: #eaf0ff;
+  color: #1456f0;
+}
+
+.main-content {
+  background: #f5f6f7;
+}
+
+.chat-messages {
+  padding: 32px min(6vw, 80px) 20px;
+}
+
+.welcome {
+  max-width: 980px;
+  margin-top: 6vh;
+}
+
+.welcome-badge {
+  border-color: #d0dcff;
+  background: #eaf0ff;
+  color: #1456f0;
+}
+
+.welcome h1 {
+  font-size: 36px;
+  color: #1f2329;
+}
+
+.welcome p {
+  color: #646a73;
+}
+
+.quick-grid {
+  gap: 10px;
+}
+
+.quick-grid button,
+.message-content,
+.input-box,
+.scenario-popover,
+.schedule-popover,
+.model-popover {
+  border-color: var(--soft-line);
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+}
+
+.quick-grid button {
+  min-height: 64px;
+  color: #1f2329;
+}
+
+.quick-grid button:hover {
+  border-color: #d0dcff;
+  background: #f8faff;
+  box-shadow: 0 4px 12px rgba(31, 35, 41, 0.06);
+}
+
+.message-content {
+  color: #1f2329;
+  line-height: 1.68;
+}
+
+.message.user .message-content {
+  background: #1456f0;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.chat-input-container {
+  background: linear-gradient(to top, #f5f6f7 76%, rgba(245, 246, 247, 0));
+  padding-bottom: 20px;
+}
+
+.input-box {
+  max-width: 960px;
+  border-color: #dee0e3;
+  box-shadow: 0 8px 24px rgba(31, 35, 41, 0.08);
+}
+
+.skill-row {
+  gap: 6px;
+}
+
+.skill-btn {
+  min-height: 30px;
+  border-color: transparent;
+  background: #f2f3f5;
+  color: #646a73;
+  font-weight: 650;
+}
+
+.skill-btn:hover,
+.skill-btn.active {
+  border-color: transparent;
+  background: #eaf0ff;
+  color: #1456f0;
+}
+
+.send-btn,
+.login-button,
+.lark-setup-auth-button {
+  border-radius: 8px;
+  background: #1456f0;
+  box-shadow: none;
+}
+
+.send-btn:hover:not(:disabled),
+.login-button:hover:not(:disabled),
+.lark-setup-auth-button:hover {
+  background: #3370ff;
+  box-shadow: none;
+}
+
+.scenario-list button,
+.schedule-card,
+.schedule-status,
+.plan-command-item,
+.lark-progress,
+.lark-setup-step {
+  border-color: var(--soft-line);
+  background: #ffffff;
+  border-radius: 8px;
+}
+
+.scenario-list button.active,
+.scenario-list button:hover {
+  border-color: #d0dcff;
+  background: #f8faff;
+}
+
+.scenario-list button.active strong,
+.scenario-list button:hover strong {
+  color: #1456f0;
+}
+
+.scenario-form input,
+.model-popover input,
+.model-popover select,
+.schedule-config-row input,
+.login-label input {
+  border-color: #dee0e3;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.scenario-form input:focus,
+.model-popover input:focus,
+.model-popover select:focus,
+.schedule-config-row input:focus,
+.login-label input:focus {
+  border-color: #3370ff;
+  box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.12);
+}
+
+.model-actions button {
+  background: #1456f0;
+}
+
+.model-actions button:hover {
+  background: #3370ff;
+  box-shadow: none;
+}
+
+.plan-preview-card {
+  border-left-color: #1456f0;
+}
+
+.plan-meta span,
+.lark-progress-count {
+  background: #eaf0ff;
+  color: #1456f0;
+}
+
+.login-card {
+  border-color: var(--soft-line);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(31, 35, 41, 0.12);
+}
+
+.login-title {
+  color: #1f2329;
+}
+
+.login-demo {
+  background: #f7f8fa;
+  border-color: var(--soft-line);
+}
