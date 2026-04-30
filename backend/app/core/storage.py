@@ -129,6 +129,46 @@ class SQLiteStore:
 
                 CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_user
                     ON scheduled_tasks(user_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS user_templates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    template_key TEXT NOT NULL UNIQUE,
+                    title TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    visibility TEXT NOT NULL DEFAULT 'private',
+                    owner_account TEXT NOT NULL,
+                    owner_name TEXT NOT NULL,
+                    current_version INTEGER NOT NULL DEFAULT 1,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    published_at INTEGER,
+                    FOREIGN KEY(owner_account) REFERENCES accounts(account) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_user_templates_owner
+                    ON user_templates(owner_account, updated_at DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_user_templates_visibility
+                    ON user_templates(visibility, updated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS user_template_versions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    template_id INTEGER NOT NULL,
+                    version INTEGER NOT NULL,
+                    prompt TEXT NOT NULL,
+                    fields_json TEXT NOT NULL DEFAULT '[]',
+                    editor_account TEXT NOT NULL,
+                    editor_name TEXT NOT NULL,
+                    change_note TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL,
+                    UNIQUE(template_id, version),
+                    FOREIGN KEY(template_id) REFERENCES user_templates(id) ON DELETE CASCADE,
+                    FOREIGN KEY(editor_account) REFERENCES accounts(account) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_user_template_versions_template
+                    ON user_template_versions(template_id, version DESC);
                 """
             )
 

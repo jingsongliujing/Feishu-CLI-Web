@@ -995,6 +995,7 @@ onUnmounted(() => {
         <div class="user-info">
           <div class="user-name">{{ currentAccount?.name || '账号' }}</div>
           <div class="user-id">{{ currentAccount?.account || '' }}</div>
+          <button type="button" class="logout-mini" @click="router.push('/templates')">模板社区</button>
           <button type="button" class="logout-mini" @click="openLarkReauth">重新授权飞书</button>
           <button type="button" class="logout-mini" @click="handleLogout">退出</button>
         </div>

@@ -5,6 +5,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'chat', component: () => import('../components/Chat.vue') },
+    { path: '/templates', name: 'templates', component: () => import('../components/TemplateCommunity.vue') },
     { path: '/login', name: 'login', component: () => import('../components/Login.vue') }
   ]
 })
