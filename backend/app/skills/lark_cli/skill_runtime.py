@@ -5,9 +5,11 @@ Runtime implementation for Lark CLI skills.
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -396,7 +398,48 @@ class LarkCLISkill(BaseSkill):
         return sorted(candidates)
 
     @staticmethod
+    def _resolve_lark_cli_node_entry() -> Optional[List[str]]:
+        if os.name != "nt":
+            return None
+        cli_path = shutil.which("lark-cli.ps1") or shutil.which("lark-cli.cmd") or shutil.which("lark-cli")
+        if not cli_path:
+            return None
+        base_dir = Path(cli_path).resolve().parent
+        run_js = base_dir / "node_modules" / "@larksuite" / "cli" / "scripts" / "run.js"
+        if not run_js.exists():
+            return None
+        node_path = base_dir / "node.exe"
+        node = str(node_path) if node_path.exists() else (shutil.which("node") or "node")
+        return [node, str(run_js)]
+
+    @staticmethod
+    def _split_lark_cli_args(command: str) -> Optional[List[str]]:
+        try:
+            args = shlex.split(command, posix=True)
+        except ValueError:
+            return None
+        if not args or args[0] != "lark-cli":
+            return None
+        node_entry = LarkCLISkill._resolve_lark_cli_node_entry()
+        if node_entry:
+            return [*node_entry, *args[1:]]
+        args[0] = shutil.which("lark-cli") or shutil.which("lark-cli.cmd") or args[0]
+        return args
+
+    @staticmethod
     def _run_command_sync(command: str, timeout: int = 30, env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess[str]:
+        lark_args = LarkCLISkill._split_lark_cli_args(command)
+        if lark_args:
+            return subprocess.run(
+                lark_args,
+                shell=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+                timeout=timeout,
+                env=env,
+            )
         return subprocess.run(
             command,
             shell=True,
@@ -910,6 +953,243 @@ class LarkCLISkill(BaseSkill):
         escaped = (value or "").replace("\\", "\\\\").replace('"', '\\"')
         escaped = escaped.replace("\r\n", "\\n").replace("\n", "\\n")
         return f'"{escaped}"'
+
+    @staticmethod
+    def _command_arg(command: str, option: str) -> str:
+        try:
+            args = shlex.split(command, posix=True)
+        except ValueError:
+            return ""
+        if option not in args:
+            return ""
+        index = args.index(option) + 1
+        return args[index] if index < len(args) else ""
+
+    @staticmethod
+    def _parse_slides_payload(command: str) -> List[str]:
+        raw_slides = LarkCLISkill._command_arg(command, "--slides")
+        if not raw_slides:
+            return []
+        try:
+            payload = json.loads(raw_slides)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(payload, list):
+            return []
+        return [item for item in payload if isinstance(item, str)]
+
+    @staticmethod
+    def _slide_text_blocks(slide_xml: str) -> List[str]:
+        blocks = []
+        for raw in re.findall(r"<p[^>]*>([\s\S]*?)</p>", slide_xml or "", flags=re.IGNORECASE):
+            text = re.sub(r"<[^>]+>", "", raw)
+            text = html.unescape(text).strip()
+            if text:
+                blocks.append(text)
+        return blocks
+
+    @classmethod
+    def _slides_payload_is_sparse(cls, command: str, expected_page_count: int = 0) -> bool:
+        slides = cls._parse_slides_payload(command)
+        if not slides:
+            return False
+        if expected_page_count > 0 and len(slides) < expected_page_count:
+            return True
+        sparse_pages = 0
+        for index, slide_xml in enumerate(slides):
+            blocks = cls._slide_text_blocks(slide_xml)
+            visible_text = "".join(blocks)
+            if index == 0:
+                if len(blocks) < 1 or len(visible_text) < 8:
+                    sparse_pages += 1
+                continue
+            if len(blocks) < 3 or len(visible_text) < 36:
+                sparse_pages += 1
+        return sparse_pages > 0
+
+    @staticmethod
+    def _extract_slides_request(query: str, command: str = "") -> Dict[str, Any]:
+        text = LarkCLISkill._sanitize_query_text(query)
+        title = LarkCLISkill._command_arg(command, "--title")
+        if not title:
+            title_match = re.search(r"(?:演示标题|标题)\s*[：:]\s*[「“\"']?(?P<title>[^」”\"'\n，,。；;]+)", text)
+            if title_match:
+                title = title_match.group("title").strip()
+        if not title:
+            title = "演示文稿"
+
+        page_count = 0
+        page_match = re.search(r"(?:共|总页数[：:]?)\s*(?P<count>\d+)\s*页", text)
+        if page_match:
+            page_count = int(page_match.group("count"))
+        if page_count <= 0 and command:
+            page_count = len(LarkCLISkill._parse_slides_payload(command))
+
+        outline_text = ""
+        outline_match = re.search(r"(?:大纲|内容|包括)\s*[：:]\s*(?P<outline>.+?)(?:\n|执行要求|$)", text)
+        if outline_match:
+            outline_text = outline_match.group("outline").strip(" 。；;")
+        elif page_match:
+            tail = text[page_match.end():].lstrip("：:，,。；; ")
+            outline_text = re.split(r"(?:生成后|创建完成后|最后|执行要求)", tail, maxsplit=1)[0].strip(" 。；;")
+
+        topics = [
+            item.strip(" 　、，,；;。")
+            for item in re.split(r"[、，,；;。\n]+", outline_text)
+            if item.strip(" 　、，,；;。")
+        ]
+        if page_count <= 0:
+            page_count = max(1, len(topics) + 1)
+        return {"title": title, "page_count": page_count, "topics": topics}
+
+    @staticmethod
+    def _fallback_slide_content(title: str, page_count: int, topics: List[str]) -> List[Dict[str, Any]]:
+        content_topics = topics[: max(page_count - 1, 0)]
+        while len(content_topics) < max(page_count - 1, 0):
+            content_topics.append(["背景与目标", "实施路径", "风险与质量保障", "总结与下一步"][len(content_topics) % 4])
+        slides: List[Dict[str, Any]] = [
+            {
+                "title": title,
+                "bullets": [
+                    "围绕目标、流程、质量与交付形成完整说明",
+                    "突出关键选择、落地步骤和验收标准",
+                ],
+            }
+        ]
+        for topic in content_topics:
+            slides.append(
+                {
+                    "title": topic,
+                    "bullets": [
+                        f"明确「{topic}」的目标、范围和适用场景",
+                        "拆解关键步骤，形成可执行、可复用的流程",
+                        "定义质量检查点和异常处理方式，降低执行失败率",
+                        "沉淀产出物、负责人和后续跟进节奏",
+                    ],
+                }
+            )
+        return slides[:page_count]
+
+    async def _generate_slides_content(self, query: str, command: str) -> List[Dict[str, Any]]:
+        parsed = self._extract_slides_request(query, command)
+        title = parsed["title"]
+        page_count = int(parsed["page_count"])
+        topics = list(parsed["topics"])
+        fallback = self._fallback_slide_content(title, page_count, topics)
+        if not self.client:
+            return fallback
+
+        system_prompt = (
+            "你是资深演示文稿内容策划。请把用户给出的标题和大纲扩写成可直接发布的 Slides 页面内容。"
+            "必须输出 JSON，不要 Markdown。每页需要 title 和 2-4 条 bullets。"
+            "第 1 页是封面，也要有简短副标题/价值说明；其余页必须有具体正文，不允许只有标题。"
+        )
+        user_prompt = json.dumps(
+            {
+                "request": query,
+                "title": title,
+                "page_count": page_count,
+                "outline_topics": topics,
+                "schema": {"slides": [{"title": "", "bullets": [""]}]},
+            },
+            ensure_ascii=False,
+        )
+        payload = await self._run_llm_json(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=1800)
+        raw_slides = payload.get("slides") if isinstance(payload, dict) else None
+        if not isinstance(raw_slides, list):
+            return fallback
+
+        slides: List[Dict[str, Any]] = []
+        for item in raw_slides:
+            if not isinstance(item, dict):
+                continue
+            slide_title = str(item.get("title") or "").strip()
+            bullets = [str(bullet).strip() for bullet in item.get("bullets", []) if str(bullet).strip()]
+            if slide_title and bullets:
+                slides.append({"title": slide_title, "bullets": bullets[:4]})
+        if len(slides) < page_count:
+            slides.extend(fallback[len(slides):])
+        return slides[:page_count]
+
+    @staticmethod
+    def _build_slide_xml(slide: Dict[str, Any], index: int) -> str:
+        title = html.escape(str(slide.get("title") or "未命名页面"), quote=True)
+        bullets = [html.escape(str(item), quote=True) for item in slide.get("bullets", []) if str(item).strip()]
+        bullet_xml = "".join(f"<p>• {item}</p>" for item in bullets[:4])
+        accent = "rgb(20,86,240)" if index == 0 else "rgb(36,91,219)"
+        bg = "rgb(246,248,252)"
+        return (
+            '<slide xmlns="http://www.larkoffice.com/sml/2.0">'
+            f'<style><fill><fillColor color="{bg}"/></fill></style>'
+            "<data>"
+            f'<shape type="shape" topLeftX="0" topLeftY="0" width="960" height="18">'
+            f'<style><fill><fillColor color="{accent}"/></fill></style></shape>'
+            f'<shape type="text" topLeftX="72" topLeftY="58" width="816" height="78">'
+            f'<content textType="title"><p>{title}</p></content></shape>'
+            f'<shape type="text" topLeftX="86" topLeftY="168" width="780" height="250">'
+            f'<content textType="body">{bullet_xml}</content></shape>'
+            f'<shape type="text" topLeftX="760" topLeftY="486" width="120" height="28">'
+            f'<content textType="body"><p>{index + 1:02d}</p></content></shape>'
+            "</data></slide>"
+        )
+
+    async def _maybe_enrich_slides_command(self, query: str, command: str) -> Tuple[str, bool]:
+        if not command.startswith("lark-cli slides +create "):
+            return command, False
+        slides_payload = self._parse_slides_payload(command)
+        expected_page_count = int(self._extract_slides_request(query, command).get("page_count") or 0)
+        if slides_payload and not self._slides_payload_is_sparse(command, expected_page_count):
+            return command, False
+        slides = await self._generate_slides_content(query, command)
+        if not slides:
+            return command, False
+        title = self._command_arg(command, "--title") or str(slides[0].get("title") or "演示文稿")
+        xml_slides = [self._build_slide_xml(slide, index) for index, slide in enumerate(slides)]
+        slides_json = json.dumps(xml_slides, ensure_ascii=False, separators=(",", ":"))
+        dry_run = " --dry-run" if "--dry-run" in command else ""
+        return (
+            f"lark-cli slides +create --title {self._quote_cli_arg(title)} "
+            f"--slides {self._quote_cli_arg(slides_json)} --as user{dry_run}"
+        ), True
+
+    @staticmethod
+    def _is_fake_slides_ai_command(command: str) -> bool:
+        normalized = (command or "").lower()
+        return (
+            normalized.startswith("lark-cli ai ")
+            or "/ai/v1/slides/expand" in normalized
+            or "/slides/v1/slides/expand" in normalized
+        )
+
+    def _build_slides_seed_command(self, query: str, original_command: str = "") -> str:
+        parsed = self._extract_slides_request(query, original_command)
+        title = str(parsed.get("title") or "演示文稿")
+        return f"lark-cli slides +create --title {self._quote_cli_arg(title)} --slides [] --as user"
+
+    def _build_slides_create_plan(self, query: str) -> Optional[Dict[str, Any]]:
+        normalized = self._sanitize_query_text(query)
+        if not any(token in normalized.lower() for token in ("slides", "ppt", "幻灯片", "演示文稿", "演示稿")):
+            return None
+        if not any(token in normalized for token in ("创建", "生成", "新建", "create")):
+            return None
+        parsed = self._extract_slides_request(query)
+        title = str(parsed.get("title") or "演示文稿")
+        page_count = int(parsed.get("page_count") or 1)
+        return {
+            "summary": f"创建飞书 Slides《{title}》，共 {page_count} 页；创建前由后端大模型补全页面正文。",
+            "relevant_skills": ["lark-shared", "lark-slides"],
+            "references": ["lark-slides-create.md", "lark-slides-xml-presentation-slide-create.md"],
+            "need_confirmation": True,
+            "reason_for_confirmation": "该请求会创建飞书 Slides，属于写操作。",
+            "commands": [
+                {
+                    "command": self._build_slides_seed_command(query),
+                    "reason": "使用 Slides 创建命令作为执行入口；执行器会先扩写内容并替换为完整 XML slides 数组。",
+                    "expected": "write",
+                }
+            ],
+            "final_response_hint": "返回演示文稿链接、ID、页数和是否完成内容扩写。",
+        }
 
     @staticmethod
     def _clean_lark_text(value: str) -> str:
@@ -2421,6 +2701,7 @@ class LarkCLISkill(BaseSkill):
 
     def _build_heuristic_plan(self, query: str) -> Optional[Dict[str, Any]]:
         for builder in (
+            self._build_slides_create_plan,
             self._build_doc_create_plan,
             self._build_bitable_import_plan,
             self._build_base_create_plan,
@@ -2448,6 +2729,19 @@ class LarkCLISkill(BaseSkill):
         execution_results: List[Dict[str, Any]],
     ) -> Optional[Dict[str, Any]]:
         normalized = self._sanitize_query_text(query)
+        if not execution_results:
+            slides_plan = self._build_slides_create_plan(normalized)
+            if slides_plan and slides_plan.get("commands"):
+                command = slides_plan["commands"][0]
+                return {
+                    "done": False,
+                    "summary": slides_plan.get("summary", ""),
+                    "command": command.get("command", ""),
+                    "reason": command.get("reason", ""),
+                    "expected": command.get("expected", "write"),
+                    "final_response_hint": slides_plan.get("final_response_hint", ""),
+                    "reason_for_confirmation": slides_plan.get("reason_for_confirmation", ""),
+                }
         if execution_results:
             last_result = execution_results[-1]
             group_schedule = self._parse_group_schedule_request(normalized)
@@ -3279,6 +3573,15 @@ class LarkCLISkill(BaseSkill):
 
     def _select_relevant_skills(self, query: str, limit: int = 4) -> List[SkillDoc]:
         query_lower = query.lower()
+        if any(token in query_lower for token in ("slides", "ppt", "幻灯片", "演示文稿", "演示稿")):
+            focused = [
+                self._skills_metadata[key]
+                for key in ("lark-shared", "lark-slides")
+                if key in self._skills_metadata
+            ]
+            if focused:
+                return focused
+
         scored: List[Tuple[int, SkillDoc]] = []
         for doc in self._skills_metadata.values():
             haystack = " ".join(
@@ -3430,6 +3733,12 @@ class LarkCLISkill(BaseSkill):
             "输出格式：\n"
             "只输出修复后的命令，不要包含任何解释或其他内容。\n"
             "如果无法修复，输出空字符串。"
+        )
+
+        system_prompt += (
+            "\n14. 如果需要 AI 生成或扩写内容，这是应用后端的大模型职责，不是飞书 CLI 能力；"
+            "禁止规划 `lark-cli ai ...`，也禁止猜测 `/ai/v1/slides/expand`、`/slides/v1/slides/expand` 等不存在接口。"
+            "需要创建 Slides 时，直接产出 `lark-cli slides +create --title ... --slides ... --as user`，执行器会在必要时自动补全内容。"
         )
 
         user_prompt = (
@@ -4216,6 +4525,13 @@ class LarkCLISkill(BaseSkill):
                 if stream:
                     yield self._make_progress_update("本轮没有生成有效命令，停止继续规划。")
                 break
+
+            if self._is_fake_slides_ai_command(current_command):
+                current_command = self._build_slides_seed_command(query, current_command)
+
+            current_command, slides_enriched = await self._maybe_enrich_slides_command(query, current_command)
+            if slides_enriched and stream:
+                yield self._make_progress_update("检测到 Slides 页面正文不足，已先调用 AI 扩写大纲并重建为内容完整的页面。")
 
             if self._should_skip_bootstrap_command(current_command, cli_state):
                 if stream:

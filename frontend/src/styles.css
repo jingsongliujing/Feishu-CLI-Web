@@ -1159,6 +1159,17 @@ select {
   line-height: 1.45;
 }
 
+.scenario-list em {
+  width: fit-content;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #1456f0;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .scenario-form {
   display: grid;
   align-content: start;
@@ -1172,6 +1183,25 @@ select {
   color: #475467;
   font-size: 12px;
   font-weight: 800;
+}
+
+.scenario-form .scenario-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d0dcff;
+  border-radius: 8px;
+  background: #f8faff;
+  color: #1456f0;
+  padding: 9px 10px;
+}
+
+.scenario-form .scenario-toggle input {
+  min-height: auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: #3370ff;
 }
 
 .scenario-form input,

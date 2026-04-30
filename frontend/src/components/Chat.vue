@@ -47,6 +47,8 @@ interface ScenarioTemplate {
   category: string
   description: string
   fields: ScenarioField[]
+  requires_ai_content_generation?: boolean
+  content_generation_label?: string
 }
 
 interface PlanCommand {
@@ -115,6 +117,7 @@ const scenarioTemplates = ref<ScenarioTemplate[]>([])
 const showScenarioPanel = ref(false)
 const selectedScenario = ref<ScenarioTemplate | null>(null)
 const scenarioValues = ref<Record<string, string>>({})
+const scenarioAiContentGeneration = ref(true)
 const showSchedulePanel = ref(false)
 const scheduleLoading = ref(false)
 const scheduleSaving = ref(false)
@@ -441,6 +444,7 @@ const deleteScheduledTask = async (task: ScheduledTaskItem) => {
 const selectScenarioTemplate = (template: ScenarioTemplate) => {
   selectedScenario.value = template
   scenarioValues.value = {}
+  scenarioAiContentGeneration.value = Boolean(template.requires_ai_content_generation)
   for (const field of template.fields || []) {
     scenarioValues.value[field.key] = ''
   }
@@ -453,10 +457,16 @@ const applyScenarioTemplate = async () => {
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({
       template_id: selectedScenario.value.id,
-      values: scenarioValues.value
+      values: scenarioValues.value,
+      enable_ai_content_generation: scenarioAiContentGeneration.value
     })
   })
   const payload = await parseApiJson(response)
+  const missingFields = payload.data?.missing_fields || []
+  if (missingFields.length) {
+    window.alert(`请先补充模板必填字段：\n${missingFields.map((field: any) => `- ${field.label || field.key}`).join('\n')}`)
+    return
+  }
   inputText.value = payload.data?.message || ''
   showScenarioPanel.value = false
   await nextTick()
@@ -1160,9 +1170,14 @@ onUnmounted(() => {
                   >
                     <strong>{{ template.title }}</strong>
                     <span>{{ template.description }}</span>
+                    <em v-if="template.requires_ai_content_generation">AI 生成内容</em>
                   </button>
                 </div>
                 <div v-if="selectedScenario" class="scenario-form">
+                  <label v-if="selectedScenario.requires_ai_content_generation" class="scenario-toggle">
+                    <input v-model="scenarioAiContentGeneration" type="checkbox" />
+                    <span>{{ selectedScenario.content_generation_label || 'AI 扩写内容' }}</span>
+                  </label>
                   <label v-for="field in selectedScenario.fields" :key="field.key">
                     <span>{{ field.label }}</span>
                     <input v-model="scenarioValues[field.key]" :placeholder="field.placeholder" />

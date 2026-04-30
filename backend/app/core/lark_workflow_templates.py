@@ -4,6 +4,8 @@ from typing import Any
 
 
 def field(key: str, label: str, placeholder: str = "") -> dict[str, str]:
+    if not placeholder:
+        placeholder = f"请输入{label}"
     return {"key": key, "label": label, "placeholder": placeholder}
 
 
@@ -176,9 +178,28 @@ LARK_WORKFLOW_TEMPLATES: list[dict[str, Any]] = [
         "id": "create_lark_slides",
         "title": "生成飞书 Slides",
         "category": "文档与内容创作",
-        "description": "根据大纲生成飞书 Slides 演示文稿。",
-        "prompt": "帮我根据以下大纲生成一份飞书Slides演示文稿：标题「{{title}}」，共 {{page_count}} 页：{{outline}}。生成后发链接给我。",
-        "fields": [field("title", "演示标题"), field("page_count", "页数"), field("outline", "逐页大纲")],
+        "description": "根据大纲生成内容完整、可交付的飞书 Slides 演示文稿。",
+        "requires_ai_content_generation": True,
+        "content_generation_label": "AI 扩写大纲为完整页面内容",
+        "prompt": (
+            "请只使用飞书 Slides 能力创建演示文稿，不要改用文档、表格、Base 或画板。\n"
+            "演示标题：「{{title}}」。总页数：{{page_count}} 页。\n"
+            "大纲：{{outline}}。\n\n"
+            "内容生成要求：在调用飞书 CLI 创建前，必须先进行 AI 内容生成，把用户给出的短大纲扩写为可发布页面内容。"
+            "每页需要包含标题、2-4 条具体正文要点、页面布局意图和视觉层级；禁止直接把大纲词条当成单页标题后创建空白页。\n"
+            "请先把大纲扩展成 {{page_count}} 页完整页面结构：第 1 页必须是封面；其余页面根据大纲拆成内容页。"
+            "如果用户给出的主题数量少于页数，请自动补齐合理页面，例如背景/目标/总结页；如果页数和大纲明显冲突，先说明你的拆分方式。\n"
+            "每一页都必须包含：页面标题、2-4 条正文要点、清晰布局说明；不要生成只有标题的空白页。\n"
+            "风格使用简洁专业的科技汇报风：浅色背景、蓝色主色、低饱和辅助色、留白充足、字号层级清晰。\n"
+            "创建时优先使用 `lark-cli slides +create --title ... --slides ... --as user` 一次性创建所有页面；"
+            "每个 slide XML 都要包含背景、标题、正文内容和必要的形状/卡片元素。\n"
+            "创建完成后读取或确认演示文稿信息，最后返回可访问链接或演示文稿 ID。"
+        ),
+        "fields": [
+            field("title", "演示标题", "例如：AI自动化测试"),
+            field("page_count", "页数", "例如：5"),
+            field("outline", "逐页大纲", "例如：工具选择；开发流程；测试流程；交付物"),
+        ],
     },
     {
         "id": "draft_followup_email_with_images",

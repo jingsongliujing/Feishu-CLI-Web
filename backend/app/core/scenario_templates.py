@@ -4,6 +4,16 @@ from typing import Any
 
 from app.core.lark_workflow_templates import LARK_WORKFLOW_TEMPLATES
 
+EXECUTION_GUARD = """
+
+执行要求：
+1. 先解析并校验用户填写的对象、链接、人员、群、文件路径和时间范围；如果信息仍有歧义或缺失，先向用户追问，不要猜测执行。
+2. 涉及发消息、创建/修改/删除、审批、权限、上传下载、订阅监听等写操作时，先生成清晰执行计划并等待用户确认；用户确认后再执行。
+3. 优先使用已配置的飞书 CLI skill 和官方能力，不要编造不存在的接口、字段或资源 ID。
+4. 如果当前飞书权限、API 能力或本地文件条件不足，停止写操作，列出缺失权限/参数/文件，并给出下一步可执行方案。
+5. 执行完成后返回结果链接、对象名称、关键 ID、失败项和下一步建议。
+""".strip()
+
 
 SCENARIO_TEMPLATES: list[dict[str, Any]] = [
     {
@@ -67,12 +77,38 @@ SCENARIO_TEMPLATES: list[dict[str, Any]] = [
 SCENARIO_TEMPLATES.extend(LARK_WORKFLOW_TEMPLATES)
 
 
+def find_template(template_id: str) -> dict[str, Any] | None:
+    return next((item for item in SCENARIO_TEMPLATES if item["id"] == template_id), None)
+
+
+def missing_required_fields(template: dict[str, Any], values: dict[str, str]) -> list[dict[str, str]]:
+    missing: list[dict[str, str]] = []
+    for field in template.get("fields", []):
+        key = str(field["key"])
+        value = (values.get(key) or "").strip()
+        if not value:
+            missing.append(
+                {
+                    "key": key,
+                    "label": str(field.get("label") or key),
+                    "placeholder": str(field.get("placeholder") or ""),
+                }
+            )
+    return missing
+
+
+def stabilize_prompt(template: dict[str, Any], prompt: str) -> str:
+    category = template.get("category") or "Scenario"
+    title = template.get("title") or template.get("id") or "模板"
+    return f"请执行以下飞书场景模板：{title}（分类：{category}）。\n\n{prompt.strip()}\n\n{EXECUTION_GUARD}"
+
+
 def render_template(template_id: str, values: dict[str, str]) -> str:
-    template = next((item for item in SCENARIO_TEMPLATES if item["id"] == template_id), None)
+    template = find_template(template_id)
     if not template:
         raise KeyError(template_id)
     prompt = str(template["prompt"])
     for field in template.get("fields", []):
         key = field["key"]
         prompt = prompt.replace("{{" + key + "}}", (values.get(key) or field.get("placeholder") or "").strip())
-    return prompt
+    return stabilize_prompt(template, prompt)
