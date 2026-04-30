@@ -13,3 +13,4 @@ dist/
 .lark_cli_users/
 .feishu_cli_data/
 *.log
+*.vscode/

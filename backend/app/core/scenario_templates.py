@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.lark_workflow_templates import LARK_WORKFLOW_TEMPLATES
+
 
 SCENARIO_TEMPLATES: list[dict[str, Any]] = [
     {
@@ -61,6 +63,8 @@ SCENARIO_TEMPLATES: list[dict[str, Any]] = [
         ],
     },
 ]
+
+SCENARIO_TEMPLATES.extend(LARK_WORKFLOW_TEMPLATES)
 
 
 def render_template(template_id: str, values: dict[str, str]) -> str:
