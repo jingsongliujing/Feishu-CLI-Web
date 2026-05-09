@@ -433,6 +433,7 @@ class LarkCLISkill(BaseSkill):
             return subprocess.run(
                 lark_args,
                 shell=False,
+                cwd=str(Path(__file__).resolve().parents[3]),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -443,6 +444,7 @@ class LarkCLISkill(BaseSkill):
         return subprocess.run(
             command,
             shell=True,
+            cwd=str(Path(__file__).resolve().parents[3]),
             capture_output=True,
             text=True,
             encoding="utf-8",

@@ -1,4 +1,5 @@
 import json
+import re
 import time
 import uuid
 from typing import Any, AsyncGenerator
@@ -13,6 +14,7 @@ from app.core.execution_records import execution_record_store
 from app.core.local_sessions import session_store
 from app.core.scheduled_tasks import parse_schedule_intent, scheduled_task_config_store, scheduled_task_store
 from app.skills.base import SkillContext, SkillResult
+from app.skills.ai_ppt import AIPPTSkill, is_ai_ppt_request
 from app.skills.lark_cli.skill import LarkCLISkill
 
 router = APIRouter()
@@ -22,6 +24,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     user_id: str = "local"
     session_id: str = ""
+    skill: str = "auto"
     command: str = ""
     confirm_write: bool = False
     confirm_plan: bool = False
@@ -33,6 +36,7 @@ class PlanPreviewRequest(BaseModel):
     message: str = Field(..., min_length=1)
     user_id: str = "local"
     session_id: str = ""
+    skill: str = "auto"
 
 
 def _serialize_sse(payload: dict[str, Any]) -> str:
@@ -76,10 +80,34 @@ def _schedule_disabled_message() -> str:
     return "定时任务当前已关闭。请先在输入框上方的「定时任务」面板打开开关，再创建新的定时任务。"
 
 
+def _ai_ppt_has_feishu_followup(message: str) -> bool:
+    text = (message or "").lower()
+    return any(
+        keyword in text
+        for keyword in (
+            "发给",
+            "发送",
+            "转发",
+            "群",
+            "群里",
+            "私聊",
+            "上传",
+            "保存",
+            "云空间",
+            "云文档",
+            "drive",
+            "chat",
+            "send",
+            "share",
+            "upload",
+        )
+    )
+
+
 @router.post("/chat")
 async def chat(request: ChatRequest, account: AccountInfo = Depends(get_current_account)):
     settings = get_settings()
-    skill = LarkCLISkill()
+    skill = AIPPTSkill() if is_ai_ppt_request(request.message, request.skill) else LarkCLISkill()
     resolved_user_id = account.account
     session = session_store.get_or_create(resolved_user_id, request.session_id)
     session_id = str(session["session_id"])
@@ -129,7 +157,7 @@ async def chat(request: ChatRequest, account: AccountInfo = Depends(get_current_
             context,
             query=request.message,
             command=request.command or None,
-            confirm_write=request.confirm_write,
+            confirm_write=request.confirm_write or (isinstance(skill, AIPPTSkill) and request.confirm_plan),
             timeout=timeout,
         )
         session_store.append_message(context.user_id, context.session_id, "user", request.message)
@@ -196,7 +224,7 @@ async def chat(request: ChatRequest, account: AccountInfo = Depends(get_current_
                 context,
                 query=request.message,
                 command=request.command or None,
-                confirm_write=request.confirm_write,
+                confirm_write=request.confirm_write or (isinstance(skill, AIPPTSkill) and request.confirm_plan),
                 timeout=timeout,
             ):
                 if event.get("type") == "content":
@@ -222,7 +250,8 @@ async def chat(request: ChatRequest, account: AccountInfo = Depends(get_current_
                 request=request.message,
                 plan=final_metadata.get("plan") or {},
                 executed_commands=final_metadata.get("executed_commands") or [],
-                success=bool(final_metadata.get("executed_commands")) and not final_metadata.get("setup_required"),
+                success=bool(final_metadata.get("ai_ppt"))
+                or (bool(final_metadata.get("executed_commands")) and not final_metadata.get("setup_required")),
             )
             yield _serialize_sse({"type": "done", "session_id": context.session_id})
         except Exception as exc:
@@ -259,6 +288,25 @@ async def preview_chat_plan(
         metadata={"created_at": int(time.time()), "account_name": account.name},
     )
     skill = LarkCLISkill()
+    if is_ai_ppt_request(request.message, request.skill):
+        slide_match = re.search(r"(\d{1,2})\s*(?:页|张|p|P|slide|slides)", request.message)
+        slide_count = int(slide_match.group(1)) if slide_match else 6
+        plan = {
+            "query": request.message,
+            "summary": (
+                f"通过飞书 CLI 的演示文稿增强能力生成/修改可编辑 PPTX，预计 {max(3, min(18, slide_count))} 页；"
+                "生成后可在 PPT 卡片中完整预览，并手动选择上传云文档、发到群或发给同事。"
+            ),
+            "normalized_query": request.message,
+            "intent_type": "lark_slides_ppt",
+            "relevant_skills": ["lark-cli", "lark-slides"],
+            "references": ["ppt-master templates", "飞书 Slides 工作流"],
+            "reason_for_confirmation": "",
+            "need_confirmation": False,
+            "commands": [],
+            "cli_state": {},
+        }
+        return {"code": 0, "data": {"session_id": context.session_id, "plan": plan}}
     plan = await skill.preview_plan(context, request.message)
     schedule_intent = parse_schedule_intent(request.message)
     if schedule_intent:

@@ -124,6 +124,17 @@ const scheduleSaving = ref(false)
 const scheduledConfig = ref<ScheduledTaskConfig>({ enabled: true, poll_seconds: 30, timezone: 'Asia/Shanghai' })
 const scheduledTasks = ref<ScheduledTaskItem[]>([])
 const scheduleStatus = ref('')
+const aiPptViewAll = ref<Record<number, boolean>>({})
+const aiPptActions = ref<Record<number, {
+  action: 'upload' | 'send_group' | 'send_person' | ''
+  target: string
+  folderToken: string
+  wikiToken: string
+  message: string
+  loading: boolean
+  result: string
+  error: string
+}>>({})
 
 const showLarkSetup = ref(false)
 const larkSetupRunning = ref(false)
@@ -529,17 +540,41 @@ const getLarkProgressSummary = (msg: Message) => {
   return '处理中'
 }
 
-const applyLarkSetupMetadata = (metadata?: Record<string, any>) => {
-  if (!metadata?.setup_required) return
+const extractMissingScopes = (text?: string) => {
+  const matches = String(text || '').match(/\b[a-z][a-z0-9_]*:[A-Za-z0-9_.:-]+\b/g) || []
+  return Array.from(new Set(matches.filter((scope) => scope.includes(':'))))
+}
+
+const buildScopeSetupMetadataFromMessage = (message?: string) => {
+  const scopes = extractMissingScopes(message)
+  if (!scopes.length || !/缺少|权限|scope|permission|forbidden|unauthorized/i.test(String(message || ''))) return null
+  return {
+    setup_required: true,
+    setup_scopes: scopes,
+    setup_steps: [
+      {
+        key: 'auth_login',
+        title: '补充授权',
+        command: `lark-cli auth login --scope "${scopes.join(' ')}"`
+      }
+    ],
+    setup_guide: ''
+  }
+}
+
+const applyLarkSetupMetadata = (metadata?: Record<string, any>, fallbackMessage = '') => {
+  const setupMetadata = metadata?.setup_required ? metadata : buildScopeSetupMetadataFromMessage(fallbackMessage)
+  if (!setupMetadata?.setup_required) return
   showLarkSetup.value = true
   larkSetupForceAuth.value = false
-  larkSetupScopes.value = Array.isArray(metadata.setup_scopes) ? metadata.setup_scopes : []
+  larkSetupScopes.value = Array.isArray(setupMetadata.setup_scopes) ? setupMetadata.setup_scopes : []
   larkSetupMessage.value = larkSetupScopes.value.length
     ? `当前账号需要补充飞书权限：${larkSetupScopes.value.join('、')}。授权成功后再重试刚才的操作。`
     : '当前账号需要连接飞书。授权和后续命令都会绑定当前登录账号。'
-  if (Array.isArray(metadata.setup_steps)) {
-    larkSetupSteps.value = metadata.setup_steps.map((step: any) => normalizeSetupStep({ ...step, status: 'pending' }))
+  if (Array.isArray(setupMetadata.setup_steps)) {
+    larkSetupSteps.value = setupMetadata.setup_steps.map((step: any) => normalizeSetupStep({ ...step, status: 'pending' }))
   }
+  void scrollToBottom(true)
 }
 
 const appendLarkProgress = (msgIndex: number, content: string) => {
@@ -556,6 +591,100 @@ const applyStreamMetadata = (msgIndex: number, payload: any) => {
   const current = messages.value[msgIndex].metadata || {}
   messages.value[msgIndex].metadata = { ...current, ...data }
   applyLarkSetupMetadata(messages.value[msgIndex].metadata)
+  if (messages.value[msgIndex].metadata?.ai_ppt) {
+    loadAiPptPreview(msgIndex)
+  }
+}
+
+const getAiPpt = (msg: Message) => msg.metadata?.ai_ppt || msg.metadata?.last_ai_ppt || null
+
+const getAiPptPreviewSlides = (msg: Message) => {
+  const slides = msg.metadata?.ai_ppt_preview?.slides
+  if (!Array.isArray(slides)) return []
+  return aiPptViewAll.value[msg.id] ? slides : slides.slice(0, 4)
+}
+
+const getAiPptSlideCount = (msg: Message) => {
+  const slides = msg.metadata?.ai_ppt_preview?.slides
+  return Array.isArray(slides) ? slides.length : 0
+}
+
+const getAiPptAction = (msg: Message) => {
+  if (!aiPptActions.value[msg.id]) {
+    aiPptActions.value[msg.id] = {
+      action: '',
+      target: '',
+      folderToken: '',
+      wikiToken: '',
+      message: '',
+      loading: false,
+      result: '',
+      error: ''
+    }
+  }
+  return aiPptActions.value[msg.id]
+}
+
+const setAiPptAction = (msg: Message, action: 'upload' | 'send_group' | 'send_person') => {
+  const current = getAiPptAction(msg)
+  aiPptActions.value[msg.id] = { ...current, action, result: '', error: '' }
+}
+
+const executeAiPptAction = async (msg: Message) => {
+  const ppt = getAiPpt(msg)
+  const actionState = getAiPptAction(msg)
+  if (!ppt?.filename || !actionState.action || actionState.loading) return
+  actionState.loading = true
+  actionState.result = ''
+  actionState.error = ''
+  try {
+    const response = await fetch('/api/v1/ai-ppt/actions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({
+        filename: ppt.filename,
+        action: actionState.action,
+        target: actionState.target,
+        folder_token: actionState.folderToken,
+        wiki_token: actionState.wikiToken,
+        message: actionState.message,
+        session_id: sessionId.value
+      })
+    })
+    if (response.status === 401) {
+      clearAuthSession()
+      await router.replace('/login')
+      return
+    }
+    const payload = await parseApiJson(response)
+    const actionMetadata = payload.data?.metadata || payload.metadata
+    const actionMessage = payload.data?.message || payload.message || payload.detail || ''
+    applyLarkSetupMetadata(actionMetadata, actionMessage)
+    if (!response.ok || payload.code !== 0) throw new Error(payload.detail || payload.message || '飞书操作失败')
+    actionState.result = payload.data?.message || '飞书操作已完成'
+  } catch (error: any) {
+    applyLarkSetupMetadata(undefined, error.message)
+    actionState.error = error.message || '飞书操作失败'
+  } finally {
+    actionState.loading = false
+  }
+}
+
+const loadAiPptPreview = async (msgIndex: number) => {
+  const msg = messages.value[msgIndex]
+  const ppt = getAiPpt(msg)
+  if (!ppt?.preview_url || msg.metadata?.ai_ppt_preview_loading || msg.metadata?.ai_ppt_preview) return
+  messages.value[msgIndex].metadata = { ...(msg.metadata || {}), ai_ppt_preview_loading: true }
+  try {
+    const response = await fetch(ppt.preview_url, { headers: authHeaders() })
+    if (!response.ok) return
+    const payload = await parseApiJson(response)
+    const current = messages.value[msgIndex].metadata || {}
+    messages.value[msgIndex].metadata = { ...current, ai_ppt_preview: payload.data, ai_ppt_preview_loading: false }
+  } catch (_error) {
+    const current = messages.value[msgIndex].metadata || {}
+    messages.value[msgIndex].metadata = { ...current, ai_ppt_preview_loading: false }
+  }
 }
 
 const loadHistory = async () => {
@@ -590,7 +719,10 @@ const loadChat = async (id: string, silent = false) => {
       content: m.content || '',
       metadata: m.metadata || {}
     }))
-    messages.value.forEach((msg) => applyLarkSetupMetadata(msg.metadata))
+    messages.value.forEach((msg, index) => {
+      applyLarkSetupMetadata(msg.metadata)
+      if (getAiPpt(msg)) loadAiPptPreview(index)
+    })
     syncSessionUrl(id, silent)
     shouldStickToBottom.value = true
     await scrollToBottom(true)
@@ -1046,6 +1178,87 @@ onUnmounted(() => {
                       </div>
                     </div>
                   </details>
+                  <div v-if="getAiPpt(msg)" class="ai-ppt-card">
+                    <div class="ai-ppt-head">
+                      <div>
+                        <span class="ai-ppt-kicker">飞书演示文稿</span>
+                        <strong>{{ getAiPpt(msg).title }}</strong>
+                        <p>{{ getAiPpt(msg).style }} · v{{ String(getAiPpt(msg).version || 1).padStart(3, '0') }}</p>
+                      </div>
+                      <a class="ai-ppt-download" :href="getAiPpt(msg).download_url" target="_blank" rel="noopener noreferrer">下载 PPTX</a>
+                    </div>
+                    <div class="ai-ppt-actions">
+                      <button type="button" @click="aiPptViewAll[msg.id] = !aiPptViewAll[msg.id]">
+                        {{ aiPptViewAll[msg.id] ? '收起预览' : `完整预览${getAiPptSlideCount(msg) ? `（${getAiPptSlideCount(msg)}页）` : ''}` }}
+                      </button>
+                      <button type="button" @click="setAiPptAction(msg, 'upload')">上传云文档</button>
+                      <button type="button" @click="setAiPptAction(msg, 'send_group')">发到群</button>
+                      <button type="button" @click="setAiPptAction(msg, 'send_person')">发给同事</button>
+                    </div>
+                    <div v-if="getAiPptPreviewSlides(msg).length" class="ai-ppt-previews">
+                      <a
+                        v-for="slide in getAiPptPreviewSlides(msg)"
+                        :key="slide.index"
+                        class="ai-ppt-preview"
+                        :href="getAiPpt(msg).download_url"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <img :src="slide.image_url" :alt="`Slide ${slide.index}`" />
+                        <span>{{ slide.index }}</span>
+                      </a>
+                    </div>
+                    <div v-else class="ai-ppt-preview-loading">
+                      {{ msg.metadata?.ai_ppt_preview_loading ? '正在生成预览...' : '预览生成后会显示在这里' }}
+                    </div>
+                    <div class="ai-ppt-slide-list">
+                      <span v-for="slide in getAiPpt(msg).slides" :key="slide.index">{{ slide.index }}. {{ slide.title }}</span>
+                    </div>
+                    <div v-if="getAiPptAction(msg).action" class="ai-ppt-action-panel">
+                      <template v-if="getAiPptAction(msg).action === 'upload'">
+                        <strong>上传到飞书云文档</strong>
+                        <label>
+                          <span>文件夹 token（可选）</span>
+                          <input v-model="getAiPptAction(msg).folderToken" placeholder="fldbc_xxx，不填则上传到云空间根目录" />
+                        </label>
+                        <label>
+                          <span>Wiki 节点 token（可选）</span>
+                          <input v-model="getAiPptAction(msg).wikiToken" placeholder="wikcn_xxx，和文件夹 token 二选一" />
+                        </label>
+                      </template>
+                      <template v-else-if="getAiPptAction(msg).action === 'send_group'">
+                        <strong>发送到飞书群</strong>
+                        <label>
+                          <span>群聊名称</span>
+                          <input v-model="getAiPptAction(msg).target" placeholder="输入群聊名称，飞书 CLI 会搜索匹配" />
+                        </label>
+                        <label>
+                          <span>附言（可选）</span>
+                          <input v-model="getAiPptAction(msg).message" placeholder="随 PPT 一起发送的说明" />
+                        </label>
+                      </template>
+                      <template v-else>
+                        <strong>发送给飞书联系人</strong>
+                        <label>
+                          <span>联系人姓名</span>
+                          <input v-model="getAiPptAction(msg).target" placeholder="输入同事姓名，飞书 CLI 会搜索联系人" />
+                        </label>
+                        <label>
+                          <span>附言（可选）</span>
+                          <input v-model="getAiPptAction(msg).message" placeholder="随 PPT 一起发送的说明" />
+                        </label>
+                      </template>
+                      <div class="ai-ppt-action-row">
+                        <button type="button" :disabled="getAiPptAction(msg).loading" @click="executeAiPptAction(msg)">
+                          {{ getAiPptAction(msg).loading ? '执行中...' : '执行飞书操作' }}
+                        </button>
+                        <button type="button" class="secondary" :disabled="getAiPptAction(msg).loading" @click="getAiPptAction(msg).action = ''">取消</button>
+                      </div>
+                      <p v-if="getAiPptAction(msg).result" class="ai-ppt-action-result">{{ getAiPptAction(msg).result }}</p>
+                      <p v-if="getAiPptAction(msg).error" class="ai-ppt-action-error">{{ getAiPptAction(msg).error }}</p>
+                    </div>
+                    <p class="ai-ppt-tip">{{ getAiPpt(msg).feishu_tip }}</p>
+                  </div>
                   <div v-html="formatContent(msg.content)"></div>
                 </template>
               </div>

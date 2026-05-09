@@ -21,6 +21,7 @@ Feishu CLI Web 基于官方 `lark-cli`，提供自然语言交互、执行计划
 - 每个用户独立授权，互不影响
 - 聊天记录、执行记录、账号信息统一保存到 SQLite
 - 内置常用场景模板，便于沉淀团队流程
+- 内置 AI PPT 工作流，支持生成、修改、完整预览，并通过按钮上传云文档或发送到飞书
 - 一次部署，多人使用：每个用户有独立的账号，互不影响。
 - 专注于飞书CLI能力的Agent：响应速度超快。
 
@@ -47,6 +48,7 @@ Feishu CLI Web 基于官方 `lark-cli`，提供自然语言交互、执行计划
 - **自然语言飞书操作**：发消息、建会议、查日程、创建文档、导入多维表格等。
 - **计划预览**：先看清楚系统准备做什么，再决定是否执行。
 - **场景模板**：群通知、会议安排、文档创建、多维表格导入、会议纪要总结等。
+- **AI PPT 融入飞书 CLI**：在聊天里生成或多轮修改 PPT，卡片内可完整预览，并通过明确按钮上传云文档、发到群聊或发给同事。
 - **多用户隔离**：每个 Web 账号有独立的 `lark-cli` HOME、授权状态和会话数据。
 - **SQLite 存储**：账号、登录态、会话、消息、执行记录集中在一个数据库文件里。
 - **OpenAI 兼容模型**：支持 Qwen、OpenAI、GLM、Doubao 等兼容接口。
@@ -64,6 +66,7 @@ Feishu CLI Web 基于官方 `lark-cli`，提供自然语言交互、执行计划
 | Contact | 联系人搜索、用户信息查询 |
 | Doc / Wiki | 文档创建、检索、更新 |
 | Drive | 文件上传、导入、下载、评论 |
+| AI PPT / Slides | 生成 PPT、修改 PPT、逐页预览、下载 PPTX、上传云文档、发送到群聊或联系人 |
 | Base | 多维表格、字段、记录、视图、仪表盘、工作流 |
 | Sheets | 电子表格读写、样式、过滤视图、导出 |
 | Task | 任务、任务清单、提醒、评论 |
@@ -71,7 +74,7 @@ Feishu CLI Web 基于官方 `lark-cli`，提供自然语言交互、执行计划
 
 ## 技术栈（依赖包）
 
-- Backend：FastAPI、Pydantic、SQLite、OpenAI SDK、Anthropic SDK、PyYAML
+- Backend：FastAPI、Pydantic、SQLite、OpenAI SDK、Anthropic SDK、PyYAML、python-pptx、Pillow
 - Frontend：Vue 3、TypeScript、Vite、SSE
 - Runtime：官方 `@larksuite/cli`
 
@@ -466,6 +469,36 @@ python backend/data/manage_users.py --delete-file backend/data/users_delete.json
 
 它不会强制重装 CLI，也不会重建已有应用配置。
 
+## AI PPT 与飞书协作
+
+AI PPT 是飞书 CLI 工作台中的一个内置能力，不是独立入口。用户仍然从聊天输入开始，例如：
+
+```text
+帮我做一份项目周报 PPT，突出进度、风险和下周计划
+把刚才的 PPT 改得更适合发给管理层，减少技术细节，增加结论页
+```
+
+系统会生成可下载的 PPTX，并在回复卡片中展示 PPT 信息、页面列表和逐页预览。用户可以多轮修改，每一轮都会保留新的版本，并且可以点击「完整预览」查看整份 PPT。
+
+PPT 完成后不会自动猜测用户要发给谁，而是在 PPT 卡片里提供明确按钮：
+
+- 「上传云文档」：上传 PPTX 到飞书云文档，可填写文件夹 token 或 Wiki 节点 token。
+- 「发到群」：填写群聊名称，系统通过飞书 CLI 搜索群聊并发送 PPTX。
+- 「发给同事」：填写联系人姓名，系统通过飞书 CLI 搜索用户并发送 PPTX。
+
+这样可以把制作、修改、查看和分发都放在同一张 PPT 卡片里，用户每次点击按钮才会执行对应飞书操作。发送或上传失败时，卡片会显示错误；如果是缺少飞书权限，会出现补充授权卡片，完成授权后回到原 PPT 卡片重新点击即可。
+
+### PPT 相关权限
+
+如果要使用「上传云文档」「发到群」「发给同事」，飞书开放平台中的应用需要配置相应用户权限，并让用户重新授权。常见权限包括：
+
+```text
+im:resource:upload
+im:resource
+```
+
+如果发送群文件时报错 `缺少权限 im:resource:upload, im:resource`，说明当前飞书应用还没有这些权限，或当前用户尚未重新授权。请先在飞书开放平台补充权限，再通过页面里的补充授权卡片完成授权。
+
 ## 定时任务
 
 当用户提出明显的定时需求时，系统会把它识别为后台定时任务，而不是立即执行飞书写操作。
@@ -585,6 +618,12 @@ X-Auth-Token: <login_token>
 | `POST /api/v1/models/config` | 保存模型配置 |
 | `GET /api/v1/lark/setup/status` | 飞书 CLI 状态 |
 | `POST /api/v1/lark/setup/stream` | 初始化或重新授权飞书 CLI |
+| `GET /api/v1/ai-ppt/templates` | AI PPT 模板列表 |
+| `POST /api/v1/ai-ppt/source` | 上传用于改写或参考的 PPTX |
+| `POST /api/v1/ai-ppt/templates` | 上传 AI PPT 模板 |
+| `GET /api/v1/ai-ppt/files/{filename}` | 下载生成的 PPTX |
+| `GET /api/v1/ai-ppt/files/{filename}/preview` | 获取 PPT 逐页预览 |
+| `POST /api/v1/ai-ppt/actions` | 执行 PPT 相关飞书操作，例如上传云文档、发群、发给联系人 |
 
 ## 部署检查清单
 
@@ -596,6 +635,7 @@ X-Auth-Token: <login_token>
 - 如需启用定时任务，确认 `.env` 中 `SCHEDULED_TASKS_ENABLED=true`，并在页面「定时任务」面板中保持全局开关开启。
 - `.feishu_cli_data/` 所在目录对后端进程可写。
 - 服务器能执行 `npm`、`npx` 和 `lark-cli`。如果没有预装 `lark-cli`，首次授权页面会引导安装。
+- 如需使用 PPT 分发能力，确认飞书开放平台应用已配置 `im:resource:upload`、`im:resource` 等所需权限，并完成重新授权。
 - 生产环境已经把前端 `/api` 反向代理到后端。
 - 默认账号密码已经修改，或已通过 `backend/data/manage_users.py` 新建正式账号并删除演示账号。
 - 用 `curl http://127.0.0.1:8000/health` 检查后端健康状态。
@@ -609,6 +649,7 @@ X-Auth-Token: <login_token>
 - Linux/macOS 全局安装 npm 包权限不足：使用 Node 版本管理器，或按系统策略使用 `sudo npm install -g @larksuite/cli`。
 - SQLite 报只读或 I/O 错误：确认 `.feishu_cli_data/` 目录存在且后端进程有写权限。
 - 前端能打开但接口 404 或跨域失败：开发环境确认 `frontend/vite.config.ts` 的 `VITE_API_TARGET` 指向后端；生产环境确认 Nginx/Caddy 已转发 `/api`。
+- PPT 能生成但不能发到群或发给同事：优先检查飞书应用权限和用户授权；补充权限后回到原 PPT 卡片重新点击发送按钮。
 
 ## 项目结构
 
@@ -618,7 +659,10 @@ Feishu-CLI-Web/
     data/                     # SQLite account maintenance scripts and JSON examples
     app/
       api/routes/              # FastAPI routes
+        ai_ppt.py              # AI PPT generation, preview and Feishu action APIs
       core/                    # SQLite, sessions, templates, records
+      assets/ai_ppt_templates/ # Built-in PPT templates
+      skills/ai_ppt/           # PPT generation and modification skill
       skills/lark_cli/
         skills/                # Skill markdown docs and references
         plan_preview.py        # dry-run plan preview

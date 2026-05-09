@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import auth, chat, health, lark_setup, models, scenarios, scheduled_tasks, templates
+from app.api.routes import ai_ppt, auth, chat, health, lark_setup, models, scenarios, scheduled_tasks, templates
 from app.config import get_settings
 from app.core.scheduled_tasks import scheduled_task_runner
 
@@ -48,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(scheduled_tasks.router, prefix=settings.API_PREFIX, tags=["Scheduled Tasks"])
     app.include_router(lark_setup.router, prefix=settings.API_PREFIX, tags=["Lark CLI Setup"])
     app.include_router(models.router, prefix=settings.API_PREFIX, tags=["Model Config"])
+    app.include_router(ai_ppt.router, prefix=settings.API_PREFIX, tags=["AI PPT"])
     _mount_frontend(app)
     return app
 

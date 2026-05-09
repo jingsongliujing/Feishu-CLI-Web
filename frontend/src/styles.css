@@ -643,6 +643,232 @@ select {
   font-size: 12px;
 }
 
+.ai-ppt-card {
+  margin-bottom: 14px;
+  border: 1px solid #dfe6f2;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.ai-ppt-head {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #edf1f7;
+  background: #f8fafc;
+}
+
+.ai-ppt-head strong {
+  display: block;
+  margin-top: 4px;
+  color: #1f2329;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.ai-ppt-head p,
+.ai-ppt-tip {
+  margin: 5px 0 0;
+  color: #646a73;
+  font-size: 12px;
+}
+
+.ai-ppt-kicker {
+  color: #1456f0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ai-ppt-download {
+  flex: 0 0 auto;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 13px;
+  border-radius: 6px;
+  background: #1456f0;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.ai-ppt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+
+.ai-ppt-actions button,
+.ai-ppt-action-row button {
+  min-height: 32px;
+  border: 1px solid #dbe2ec;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1456f0;
+  padding: 0 11px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ai-ppt-actions button:hover,
+.ai-ppt-action-row button:hover {
+  border-color: #b8c7e6;
+  background: #f5f8ff;
+}
+
+.ai-ppt-previews {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 16px 8px;
+}
+
+.ai-ppt-preview {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  border: 1px solid #e5eaf2;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f5f7fb;
+}
+
+.ai-ppt-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.ai-ppt-preview span {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  min-width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(20, 86, 240, 0.9);
+  color: #ffffff;
+  font-size: 11px;
+}
+
+.ai-ppt-preview-loading {
+  padding: 14px 16px 4px;
+  color: #646a73;
+  font-size: 13px;
+}
+
+.ai-ppt-slide-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px 6px;
+}
+
+.ai-ppt-slide-list span {
+  max-width: 100%;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #f2f3f5;
+  color: #40464f;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ai-ppt-action-panel {
+  margin: 10px 16px 8px;
+  padding: 12px;
+  border: 1px solid #dfe6f2;
+  border-radius: 8px;
+  background: #fbfcff;
+}
+
+.ai-ppt-action-panel strong {
+  display: block;
+  margin-bottom: 10px;
+  color: #1f2329;
+  font-size: 14px;
+}
+
+.ai-ppt-action-panel label {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 9px;
+}
+
+.ai-ppt-action-panel label span {
+  color: #646a73;
+  font-size: 12px;
+}
+
+.ai-ppt-action-panel input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #d9e0ea;
+  border-radius: 6px;
+  padding: 0 10px;
+  color: #1f2329;
+  background: #ffffff;
+  outline: none;
+}
+
+.ai-ppt-action-panel input:focus {
+  border-color: #1456f0;
+}
+
+.ai-ppt-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ai-ppt-action-row button:first-child {
+  border-color: #1456f0;
+  background: #1456f0;
+  color: #ffffff;
+}
+
+.ai-ppt-action-row button.secondary {
+  color: #646a73;
+}
+
+.ai-ppt-action-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.ai-ppt-action-result,
+.ai-ppt-action-error {
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.ai-ppt-action-result {
+  color: #17643b;
+}
+
+.ai-ppt-action-error {
+  color: #b42318;
+}
+
+.ai-ppt-tip {
+  padding: 0 16px 14px;
+}
+
 .clarify-container {
   max-width: 840px;
   margin: 18px auto;
@@ -1419,6 +1645,19 @@ select {
 
   .message-content {
     max-width: 94%;
+  }
+
+  .ai-ppt-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ai-ppt-download {
+    width: 100%;
+  }
+
+  .ai-ppt-previews {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .quick-grid {
